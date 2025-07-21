@@ -1,0 +1,47 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id         String   @id @default(cuid())
+  username   String   @unique
+  password   String
+  name       String
+  department String
+  role       Role     @default(WORKER)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  attendances Attendance[]
+}
+
+model Attendance {
+  id              String    @id @default(cuid())
+  userId          String
+  date            DateTime  @default(now())
+  checkInTime     DateTime
+  checkInPhoto    String    // Base64 or file path
+  checkInLocation String    // JSON string with lat/lng
+  checkOutTime    DateTime?
+  checkOutPhoto   String?   // Base64 or file path
+  checkOutLocation String?  // JSON string with lat/lng
+  duration        Int?      // Duration in minutes
+  createdAt       DateTime  @default(now())
+  
+  user User @relation(fields: [userId], references: [id])
+  
+  @@index([userId, date])
+}
+
+enum Role {
+  ADMIN
+  WORKER
+}
