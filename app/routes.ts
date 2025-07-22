@@ -9,6 +9,7 @@ export default [
     index("routes/dashboard.tsx"),
     route("attendance", "routes/attendance.tsx"),
     route("profile", "routes/profile.tsx"),
+    route("photo/:attendanceId/:type", "routes/photo.$attendanceId.$type.tsx"),
     
     // Admin only routes
     layout("routes/layouts/admin.tsx", [
@@ -23,4 +24,5 @@ export default [
   route("api/auth/logout", "routes/api/auth.logout.tsx"),
   route("api/attendance/checkin", "routes/api/attendance.checkin.tsx"),
   route("api/attendance/checkout", "routes/api/attendance.checkout.tsx"),
+  route("api/photo/:attendanceId/:type", "routes/api/photo.$attendanceId.$type.tsx"),
 ] satisfies RouteConfig;

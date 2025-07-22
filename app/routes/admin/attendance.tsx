@@ -171,13 +171,14 @@ export default function AdminAttendance() {
       header: "Check-in Photo",
       cell: (info) => {
         const photo = info.getValue();
+        const row = info.row.original;
         return (
           <div className="flex justify-center">
             <img
               src={photo}
               alt="Check-in"
               className="w-16 h-20 object-cover rounded cursor-pointer hover:scale-110 transition-transform"
-              onClick={() => window.open(photo, '_blank')}
+              onClick={() => window.open(`/photo/${row.id}/checkin`, '_blank')}
             />
           </div>
         );
@@ -222,6 +223,7 @@ export default function AdminAttendance() {
       header: "Check-out Photo",
       cell: (info) => {
         const photo = info.getValue();
+        const row = info.row.original;
         if (!photo) return "-";
         return (
           <div className="flex justify-center">
@@ -229,7 +231,7 @@ export default function AdminAttendance() {
               src={photo}
               alt="Check-out"
               className="w-16 h-20 object-cover rounded cursor-pointer hover:scale-110 transition-transform"
-              onClick={() => window.open(photo, '_blank')}
+              onClick={() => window.open(`/photo/${row.id}/checkout`, '_blank')}
             />
           </div>
         );
@@ -254,7 +256,7 @@ export default function AdminAttendance() {
   });
 
   const exportToCSV = () => {
-    const headers = ["Name", "Division", "Check In", "Check Out", "Duration", "Check-in Location", "Check-out Location"];
+    const headers = ["Name", "Division", "Check In", "Check Out", "Duration", "Check-in Location", "Check-out Location", "Check-in Photo", "Check-out Photo"];
     const rows = records.map((record) => {
       const checkInLocation = (record.checkInLocationName && record.checkInLocationName.trim() !== '')
         ? record.checkInLocationName
@@ -274,6 +276,8 @@ export default function AdminAttendance() {
         record.duration ? `${Math.floor(record.duration / 60)}h ${record.duration % 60}m` : "-",
         checkInLocation,
         checkOutLocation,
+        `http://localhost:3000/photo/${record.id}/checkin`,
+        record.checkOutPhoto ? `http://localhost:3000/photo/${record.id}/checkout` : "-",
       ];
     });
 
@@ -332,7 +336,7 @@ export default function AdminAttendance() {
           : 'Location unavailable';
 
       // Add row data
-      worksheet.addRow({
+      const row = worksheet.addRow({
         name: record.userName,
         division: record.userDivision,
         checkIn: record.checkInTime,
@@ -340,9 +344,26 @@ export default function AdminAttendance() {
         duration: record.duration ? `${Math.floor(record.duration / 60)}h ${record.duration % 60}m` : "-",
         checkInLocation: checkInLocation,
         checkOutLocation: checkOutLocation,
-        checkInPhoto: 'See Image →',
-        checkOutPhoto: record.checkOutPhoto ? 'See Image →' : '-',
+        checkInPhoto: 'View Check-in Photo',
+        checkOutPhoto: record.checkOutPhoto ? 'View Check-out Photo' : '-',
       });
+
+      // Add hyperlinks for photo columns
+      const checkInPhotoCell = row.getCell('checkInPhoto');
+      checkInPhotoCell.value = {
+        text: 'View Check-in Photo',
+        hyperlink: `http://localhost:3000/photo/${record.id}/checkin`
+      };
+      checkInPhotoCell.font = { color: { argb: 'FF0000FF' }, underline: true };
+
+      if (record.checkOutPhoto) {
+        const checkOutPhotoCell = row.getCell('checkOutPhoto');
+        checkOutPhotoCell.value = {
+          text: 'View Check-out Photo',
+          hyperlink: `http://localhost:3000/photo/${record.id}/checkout`
+        };
+        checkOutPhotoCell.font = { color: { argb: 'FF0000FF' }, underline: true };
+      }
 
       // Set row height to accommodate images
       worksheet.getRow(rowIndex).height = 80;
