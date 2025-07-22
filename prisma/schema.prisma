@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,16 +8,23 @@ datasource db {
 }
 
 model User {
-  id         String   @id @default(cuid())
-  username   String   @unique
-  password   String
-  name       String
-  department String
-  role       Role     @default(WORKER)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  
-  attendances Attendance[]
+  id           String       @id @default(cuid())
+  username     String       @unique
+  password     String
+  name         String
+  department   String?      // Keep for backward compatibility
+  division     String       @default("General")
+  role         Role         @default(WORKER)
+  securityCode String?      // For superadmin password changes
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  attendances  Attendance[]
+}
+
+enum Role {
+  WORKER
+  ADMIN
+  SUPERADMIN
 }
 
 model Attendance {
@@ -28,22 +32,16 @@ model Attendance {
   userId               String
   date                 DateTime  @default(now())
   checkInTime          DateTime
-  checkInPhoto         String    // Base64 or file path
-  checkInLocation      String    // JSON string with lat/lng
-  checkInLocationName  String?   // Human readable location name
+  checkInPhoto         String
+  checkInLocation      String
   checkOutTime         DateTime?
-  checkOutPhoto        String?   // Base64 or file path
-  checkOutLocation     String?   // JSON string with lat/lng
-  checkOutLocationName String?   // Human readable location name
-  duration             Int?      // Duration in minutes
+  checkOutPhoto        String?
+  checkOutLocation     String?
+  duration             Int?
   createdAt            DateTime  @default(now())
-  
-  user User @relation(fields: [userId], references: [id])
-  
-  @@index([userId, date])
-}
+  checkInLocationName  String?
+  checkOutLocationName String?
+  user                 User      @relation(fields: [userId], references: [id])
 
-enum Role {
-  ADMIN
-  WORKER
+  @@index([userId, date])
 }

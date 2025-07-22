@@ -1,4 +1,5 @@
 import { useLoaderData } from "react-router";
+
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAdmin } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
@@ -15,12 +16,13 @@ import {
 } from "@tanstack/react-table";
 import { useState } from "react";
 import { ArrowUpDown, Calendar, Download, Search } from "lucide-react";
+
 import ExcelJS from "exceljs";
 
 type AttendanceRecord = {
   id: string;
   userName: string;
-  userDepartment: string;
+  userDivision: string;
   date: string;
   checkInTime: string;
   checkOutTime: string | null;
@@ -63,7 +65,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const records: AttendanceRecord[] = attendances.map((attendance) => ({
     id: attendance.id,
     userName: attendance.user.name,
-    userDepartment: attendance.user.department,
+    userDivision: (attendance.user as any).division || attendance.user.department,
     date: format(new Date(attendance.date), "yyyy-MM-dd"),
     checkInTime: format(new Date(attendance.checkInTime), "HH:mm:ss"),
     checkOutTime: attendance.checkOutTime
@@ -86,6 +88,7 @@ const columnHelper = createColumnHelper<AttendanceRecord>();
 export default function AdminAttendance() {
   const { records, currentDate } = useLoaderData<typeof loader>();
   const [sorting, setSorting] = useState<SortingState>([]);
+
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
 
@@ -102,8 +105,8 @@ export default function AdminAttendance() {
       ),
       cell: (info) => info.getValue(),
     }),
-    columnHelper.accessor("userDepartment", {
-      header: "Department",
+    columnHelper.accessor("userDivision", {
+      header: "Division",
       cell: (info) => info.getValue(),
     }),
     columnHelper.accessor("checkInTime", {
@@ -251,7 +254,7 @@ export default function AdminAttendance() {
   });
 
   const exportToCSV = () => {
-    const headers = ["Name", "Department", "Check In", "Check Out", "Duration", "Check-in Location", "Check-out Location"];
+    const headers = ["Name", "Division", "Check In", "Check Out", "Duration", "Check-in Location", "Check-out Location"];
     const rows = records.map((record) => {
       const checkInLocation = (record.checkInLocationName && record.checkInLocationName.trim() !== '')
         ? record.checkInLocationName
@@ -265,7 +268,7 @@ export default function AdminAttendance() {
 
       return [
         record.userName,
-        record.userDepartment,
+        record.userDivision,
         record.checkInTime,
         record.checkOutTime || "-",
         record.duration ? `${Math.floor(record.duration / 60)}h ${record.duration % 60}m` : "-",
@@ -295,7 +298,7 @@ export default function AdminAttendance() {
     // Set column headers
     worksheet.columns = [
       { header: 'Name', key: 'name', width: 20 },
-      { header: 'Department', key: 'department', width: 15 },
+      { header: 'Division', key: 'division', width: 15 },
       { header: 'Check In', key: 'checkIn', width: 12 },
       { header: 'Check Out', key: 'checkOut', width: 12 },
       { header: 'Duration', key: 'duration', width: 12 },
@@ -331,7 +334,7 @@ export default function AdminAttendance() {
       // Add row data
       worksheet.addRow({
         name: record.userName,
-        department: record.userDepartment,
+        division: record.userDivision,
         checkIn: record.checkInTime,
         checkOut: record.checkOutTime || "-",
         duration: record.duration ? `${Math.floor(record.duration / 60)}h ${record.duration % 60}m` : "-",
@@ -439,6 +442,9 @@ export default function AdminAttendance() {
                     value={currentDate}
                     onChange={(e) => {
                       window.location.href = `/admin/attendance?date=${e.target.value}`;
+
+
+
                     }}
                     className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
                   />
