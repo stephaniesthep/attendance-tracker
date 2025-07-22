@@ -10,3 +10,83 @@
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
+
+/* Mobile camera optimizations */
+.camera-container {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.camera-container video {
+  width: 100% !important;
+  height: auto !important;
+  object-fit: cover;
+  border-radius: 0.5rem;
+}
+
+/* Prevent zoom on mobile inputs */
+@media screen and (max-width: 768px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="date"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  
+  /* Mobile-specific button sizing */
+  .mobile-button {
+    min-height: 44px;
+    padding: 12px 16px;
+  }
+  
+  /* Better touch targets */
+  button {
+    min-height: 44px;
+  }
+  
+  /* Prevent horizontal scroll */
+  body {
+    overflow-x: hidden;
+  }
+}
+
+/* Camera overlay styles */
+.camera-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.7));
+  color: white;
+  padding: 1rem;
+  border-bottom-left-radius: 0.5rem;
+  border-bottom-right-radius: 0.5rem;
+}
+
+/* Download button animation */
+.download-button {
+  transition: all 0.2s ease-in-out;
+}
+
+.download-button:hover {
+  transform: translateY(-1px);
+}
+
+/* Responsive image container */
+.image-container {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.image-container img {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  border-radius: 0.5rem;
+}

@@ -24,17 +24,19 @@ model User {
 }
 
 model Attendance {
-  id              String    @id @default(cuid())
-  userId          String
-  date            DateTime  @default(now())
-  checkInTime     DateTime
-  checkInPhoto    String    // Base64 or file path
-  checkInLocation String    // JSON string with lat/lng
-  checkOutTime    DateTime?
-  checkOutPhoto   String?   // Base64 or file path
-  checkOutLocation String?  // JSON string with lat/lng
-  duration        Int?      // Duration in minutes
-  createdAt       DateTime  @default(now())
+  id                   String    @id @default(cuid())
+  userId               String
+  date                 DateTime  @default(now())
+  checkInTime          DateTime
+  checkInPhoto         String    // Base64 or file path
+  checkInLocation      String    // JSON string with lat/lng
+  checkInLocationName  String?   // Human readable location name
+  checkOutTime         DateTime?
+  checkOutPhoto        String?   // Base64 or file path
+  checkOutLocation     String?   // JSON string with lat/lng
+  checkOutLocationName String?   // Human readable location name
+  duration             Int?      // Duration in minutes
+  createdAt            DateTime  @default(now())
   
   user User @relation(fields: [userId], references: [id])
   

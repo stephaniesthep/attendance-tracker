@@ -15,6 +15,7 @@ import {
 } from "@tanstack/react-table";
 import { useState } from "react";
 import { ArrowUpDown, Calendar, Download, Search } from "lucide-react";
+import ExcelJS from "exceljs";
 
 type AttendanceRecord = {
   id: string;
@@ -25,7 +26,11 @@ type AttendanceRecord = {
   checkOutTime: string | null;
   duration: number | null;
   checkInLocation: string;
+  checkInLocationName: string | null;
   checkOutLocation: string | null;
+  checkOutLocationName: string | null;
+  checkInPhoto: string;
+  checkOutPhoto: string | null;
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -66,7 +71,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       : null,
     duration: attendance.duration,
     checkInLocation: attendance.checkInLocation,
+    checkInLocationName: (attendance as any).checkInLocationName || null,
     checkOutLocation: attendance.checkOutLocation,
+    checkOutLocationName: (attendance as any).checkOutLocationName || null,
+    checkInPhoto: attendance.checkInPhoto,
+    checkOutPhoto: attendance.checkOutPhoto,
   }));
 
   return { records, currentDate: format(date, "yyyy-MM-dd") };
@@ -123,15 +132,104 @@ export default function AdminAttendance() {
         return `${hours}h ${minutes}m`;
       },
     }),
-    columnHelper.accessor("checkInLocation", {
-      header: "Location",
+    columnHelper.accessor("checkInLocationName", {
+      header: "Check-in Location",
       cell: (info) => {
-        try {
-          const location = JSON.parse(info.getValue());
-          return `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`;
-        } catch {
-          return info.getValue();
+        const locationName = info.getValue();
+        const row = info.row.original;
+        
+        // First try to get the location name
+        if (locationName && locationName.trim() !== '') {
+          return (
+            <div className="min-w-[200px] max-w-xs">
+              <span className="text-sm">{locationName}</span>
+            </div>
+          );
         }
+        
+        // Fallback to coordinates if no location name
+        try {
+          const location = JSON.parse(row.checkInLocation);
+          return (
+            <div className="min-w-[150px]">
+              <span className="text-xs">{location.lat.toFixed(4)}, {location.lng.toFixed(4)}</span>
+            </div>
+          );
+        } catch {
+          return (
+            <div className="min-w-[150px]">
+              <span className="text-xs text-gray-500">Location unavailable</span>
+            </div>
+          );
+        }
+      },
+    }),
+    columnHelper.accessor("checkInPhoto", {
+      header: "Check-in Photo",
+      cell: (info) => {
+        const photo = info.getValue();
+        return (
+          <div className="flex justify-center">
+            <img
+              src={photo}
+              alt="Check-in"
+              className="w-16 h-20 object-cover rounded cursor-pointer hover:scale-110 transition-transform"
+              onClick={() => window.open(photo, '_blank')}
+            />
+          </div>
+        );
+      },
+    }),
+    columnHelper.accessor("checkOutLocationName", {
+      header: "Check-out Location",
+      cell: (info) => {
+        const locationName = info.getValue();
+        const row = info.row.original;
+        
+        // If no checkout, show dash
+        if (!row.checkOutLocation) return "-";
+        
+        // First try to get the location name
+        if (locationName && locationName.trim() !== '') {
+          return (
+            <div className="min-w-[200px] max-w-xs">
+              <span className="text-sm">{locationName}</span>
+            </div>
+          );
+        }
+        
+        // Fallback to coordinates if no location name
+        try {
+          const location = JSON.parse(row.checkOutLocation);
+          return (
+            <div className="min-w-[150px]">
+              <span className="text-xs">{location.lat.toFixed(4)}, {location.lng.toFixed(4)}</span>
+            </div>
+          );
+        } catch {
+          return (
+            <div className="min-w-[150px]">
+              <span className="text-xs text-gray-500">Location unavailable</span>
+            </div>
+          );
+        }
+      },
+    }),
+    columnHelper.accessor("checkOutPhoto", {
+      header: "Check-out Photo",
+      cell: (info) => {
+        const photo = info.getValue();
+        if (!photo) return "-";
+        return (
+          <div className="flex justify-center">
+            <img
+              src={photo}
+              alt="Check-out"
+              className="w-16 h-20 object-cover rounded cursor-pointer hover:scale-110 transition-transform"
+              onClick={() => window.open(photo, '_blank')}
+            />
+          </div>
+        );
       },
     }),
   ];
@@ -153,15 +251,28 @@ export default function AdminAttendance() {
   });
 
   const exportToCSV = () => {
-    const headers = ["Name", "Department", "Check In", "Check Out", "Duration", "Location"];
-    const rows = records.map((record) => [
-      record.userName,
-      record.userDepartment,
-      record.checkInTime,
-      record.checkOutTime || "-",
-      record.duration ? `${Math.floor(record.duration / 60)}h ${record.duration % 60}m` : "-",
-      record.checkInLocation,
-    ]);
+    const headers = ["Name", "Department", "Check In", "Check Out", "Duration", "Check-in Location", "Check-out Location"];
+    const rows = records.map((record) => {
+      const checkInLocation = (record.checkInLocationName && record.checkInLocationName.trim() !== '')
+        ? record.checkInLocationName
+        : 'Location unavailable';
+      
+      const checkOutLocation = !record.checkOutLocation
+        ? "-"
+        : (record.checkOutLocationName && record.checkOutLocationName.trim() !== '')
+          ? record.checkOutLocationName
+          : 'Location unavailable';
+
+      return [
+        record.userName,
+        record.userDepartment,
+        record.checkInTime,
+        record.checkOutTime || "-",
+        record.duration ? `${Math.floor(record.duration / 60)}h ${record.duration % 60}m` : "-",
+        checkInLocation,
+        checkOutLocation,
+      ];
+    });
 
     const csvContent = [
       headers.join(","),
@@ -177,22 +288,143 @@ export default function AdminAttendance() {
     window.URL.revokeObjectURL(url);
   };
 
+  const exportToExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Attendance Report');
+
+    // Set column headers
+    worksheet.columns = [
+      { header: 'Name', key: 'name', width: 20 },
+      { header: 'Department', key: 'department', width: 15 },
+      { header: 'Check In', key: 'checkIn', width: 12 },
+      { header: 'Check Out', key: 'checkOut', width: 12 },
+      { header: 'Duration', key: 'duration', width: 12 },
+      { header: 'Check-in Location', key: 'checkInLocation', width: 30 },
+      { header: 'Check-out Location', key: 'checkOutLocation', width: 30 },
+      { header: 'Check-in Photo', key: 'checkInPhoto', width: 20 },
+      { header: 'Check-out Photo', key: 'checkOutPhoto', width: 20 },
+    ];
+
+    // Style the header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE6E6FA' }
+    };
+
+    // Add data rows
+    for (let i = 0; i < records.length; i++) {
+      const record = records[i];
+      const rowIndex = i + 2; // +2 because Excel is 1-indexed and we have a header row
+
+      const checkInLocation = (record.checkInLocationName && record.checkInLocationName.trim() !== '')
+        ? record.checkInLocationName
+        : 'Location unavailable';
+      
+      const checkOutLocation = !record.checkOutLocation
+        ? "-"
+        : (record.checkOutLocationName && record.checkOutLocationName.trim() !== '')
+          ? record.checkOutLocationName
+          : 'Location unavailable';
+
+      // Add row data
+      worksheet.addRow({
+        name: record.userName,
+        department: record.userDepartment,
+        checkIn: record.checkInTime,
+        checkOut: record.checkOutTime || "-",
+        duration: record.duration ? `${Math.floor(record.duration / 60)}h ${record.duration % 60}m` : "-",
+        checkInLocation: checkInLocation,
+        checkOutLocation: checkOutLocation,
+        checkInPhoto: 'See Image →',
+        checkOutPhoto: record.checkOutPhoto ? 'See Image →' : '-',
+      });
+
+      // Set row height to accommodate images
+      worksheet.getRow(rowIndex).height = 80;
+
+      // Add check-in photo
+      if (record.checkInPhoto) {
+        try {
+          // Convert base64 to buffer
+          const base64Data = record.checkInPhoto.replace(/^data:image\/[a-z]+;base64,/, '');
+          const imageBuffer = Buffer.from(base64Data, 'base64');
+          
+          const imageId = workbook.addImage({
+            buffer: imageBuffer,
+            extension: 'png',
+          });
+
+          worksheet.addImage(imageId, {
+            tl: { col: 7, row: rowIndex - 1 }, // H column (0-indexed)
+            ext: { width: 60, height: 75 }
+          });
+        } catch (error) {
+          console.error('Error adding check-in image:', error);
+        }
+      }
+
+      // Add check-out photo
+      if (record.checkOutPhoto) {
+        try {
+          // Convert base64 to buffer
+          const base64Data = record.checkOutPhoto.replace(/^data:image\/[a-z]+;base64,/, '');
+          const imageBuffer = Buffer.from(base64Data, 'base64');
+          
+          const imageId = workbook.addImage({
+            buffer: imageBuffer,
+            extension: 'png',
+          });
+
+          worksheet.addImage(imageId, {
+            tl: { col: 8, row: rowIndex - 1 }, // I column (0-indexed)
+            ext: { width: 60, height: 75 }
+          });
+        } catch (error) {
+          console.error('Error adding check-out image:', error);
+        }
+      }
+    }
+
+    // Generate Excel file and download
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attendance-${currentDate}.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Attendance Records</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">Daily Attendance Report</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Daily attendance tracking and reporting
+            View attendance records with photos and location names for selected date
           </p>
         </div>
-        <button
-          onClick={exportToCSV}
-          className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-        >
-          <Download className="h-4 w-4 mr-2" />
-          Export CSV
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={exportToCSV}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export CSV
+          </button>
+          <button
+            onClick={exportToExcel}
+            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export Excel (with Photos)
+          </button>
+        </div>
       </div>
 
       <div className="bg-white shadow sm:rounded-lg">
@@ -229,7 +461,7 @@ export default function AdminAttendance() {
               </div>
             </div>
 
-            <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+            <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
               <table className="min-w-full divide-y divide-gray-300">
                 <thead className="bg-gray-50">
                   {table.getHeaderGroups().map((headerGroup) => (
@@ -266,7 +498,7 @@ export default function AdminAttendance() {
                         {row.getVisibleCells().map((cell) => (
                           <td
                             key={cell.id}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
+                            className="px-6 py-4 text-sm text-gray-900"
                           >
                             {flexRender(
                               cell.column.columnDef.cell,

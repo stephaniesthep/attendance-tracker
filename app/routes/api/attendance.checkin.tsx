@@ -10,6 +10,7 @@ export async function action({ request }: ActionFunctionArgs) {
   
   const photo = formData.get("photo");
   const location = formData.get("location");
+  const locationName = formData.get("locationName");
 
   if (typeof photo !== "string" || typeof location !== "string") {
     throw new Response("Invalid data", { status: 400 });
@@ -33,13 +34,14 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   // Create attendance record
-  await prisma.attendance.create({
+  await (prisma.attendance as any).create({
     data: {
       userId: user.id,
       date: today,
       checkInTime: today,
       checkInPhoto: photo,
       checkInLocation: location,
+      checkInLocationName: typeof locationName === "string" ? locationName : null,
     },
   });
 
