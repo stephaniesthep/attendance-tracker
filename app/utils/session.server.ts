@@ -51,7 +51,23 @@ export async function requireUser(request: Request): Promise<User> {
 
 export async function requireAdmin(request: Request): Promise<User> {
   const user = await requireUser(request);
-  if (user.role !== "ADMIN") {
+  if (user.role !== "ADMIN" && user.role !== "SUPERADMIN") {
+    throw redirect("/dashboard");
+  }
+  return user;
+}
+
+export async function requireSuperAdmin(request: Request): Promise<User> {
+  const user = await requireUser(request);
+  if (user.role !== "SUPERADMIN") {
+    throw redirect("/dashboard");
+  }
+  return user;
+}
+
+export async function requireAdminOrSuperAdmin(request: Request): Promise<User> {
+  const user = await requireUser(request);
+  if (user.role !== "ADMIN" && user.role !== "SUPERADMIN") {
     throw redirect("/dashboard");
   }
   return user;

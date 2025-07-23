@@ -1,7 +1,7 @@
 import { Outlet, Link, useLoaderData, Form } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
-import { LogOut, Home, Camera, Users, User } from "lucide-react";
+import { LogOut, Home, Camera, Users, User, Shield } from "lucide-react";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
@@ -35,6 +35,15 @@ export default function ProtectedLayout() {
                   <Camera className="w-4 h-4 mr-2" />
                   Attendance
                 </Link>
+                {user.role === "SUPERADMIN" && (
+                  <Link
+                    to="/superadmin"
+                    className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                  >
+                    <Shield className="w-4 h-4 mr-2" />
+                    Super Admin
+                  </Link>
+                )}
                 {user.role === "ADMIN" && (
                   <Link
                     to="/admin"

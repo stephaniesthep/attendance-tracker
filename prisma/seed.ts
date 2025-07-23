@@ -1,10 +1,25 @@
-import { PrismaClient, User, Attendance } from "@prisma/client";
+import { PrismaClient, User } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
 async function seed() {
   console.log("🌱 Seeding database...");
+
+  // Create superadmin user
+  const superadminPassword = await bcrypt.hash("superadmin123", 10);
+  const superadmin = await prisma.user.create({
+    data: {
+      username: "superadmin",
+      password: superadminPassword,
+      name: "Super Administrator",
+      department: "System",
+      role: "SUPERADMIN",
+      superadminVerifyCode: "12031999", // Pre-set verification code
+    },
+  });
+
+  console.log(`✅ Created superadmin user: ${superadmin.username}`);
 
   // Create admin users
   const adminPassword = await bcrypt.hash("admin123", 10);
@@ -37,6 +52,15 @@ async function seed() {
         role: "ADMIN",
       },
     }),
+    prisma.user.create({
+      data: {
+        username: "admin4",
+        password: adminPassword,
+        name: "Lisa Admin",
+        department: "Finance",
+        role: "ADMIN",
+      },
+    }),
   ]);
 
   console.log(`✅ Created ${admins.length} admin users`);
@@ -61,53 +85,11 @@ async function seed() {
 
   console.log(`✅ Created ${workers.length} worker users`);
 
-  // Create some sample attendance records for today
-  const today = new Date();
-  const sampleAttendance: Attendance[] = [];
-  
-  // Create attendance for some workers
-  for (let i = 0; i < 10; i++) {
-    const worker = workers[i];
-    const checkInTime = new Date(today);
-    checkInTime.setHours(8 + Math.floor(Math.random() * 2), Math.floor(Math.random() * 60));
-    
-    const hasCheckedOut = Math.random() > 0.3; // 70% have checked out
-    let checkOutTime: Date | null = null;
-    let duration: number | null = null;
-    
-    if (hasCheckedOut) {
-      checkOutTime = new Date(checkInTime);
-      checkOutTime.setHours(checkOutTime.getHours() + 8 + Math.floor(Math.random() * 2));
-      duration = Math.floor((checkOutTime.getTime() - checkInTime.getTime()) / 1000 / 60);
-    }
-    
-    const attendance = await prisma.attendance.create({
-      data: {
-        userId: worker.id,
-        date: today,
-        checkInTime,
-        checkInPhoto: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/yQALCAABAAEBAREA/8wABgABAAA=",
-        checkInLocation: JSON.stringify({
-          lat: -6.2088 + (Math.random() - 0.5) * 0.01,
-          lng: 106.8456 + (Math.random() - 0.5) * 0.01,
-        }),
-        checkOutTime,
-        checkOutPhoto: hasCheckedOut ? "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/yQALCAABAAEBAREA/8wABgABAAA=" : null,
-        checkOutLocation: hasCheckedOut ? JSON.stringify({
-          lat: -6.2088 + (Math.random() - 0.5) * 0.01,
-          lng: 106.8456 + (Math.random() - 0.5) * 0.01,
-        }) : null,
-        duration,
-      },
-    });
-    sampleAttendance.push(attendance);
-  }
-
-  console.log(`✅ Created ${sampleAttendance.length} attendance records`);
-
   console.log("\n📋 Test Credentials:");
+  console.log("Superadmin login: superadmin / superadmin123");
   console.log("Admin login: admin1 / admin123");
   console.log("Worker login: worker1 / worker123");
+  console.log("\nSuperadmin verification code: 12031999");
   console.log("\n✨ Seed completed!");
 }
 

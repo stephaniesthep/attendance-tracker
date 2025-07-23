@@ -4,6 +4,10 @@ import { requireAdmin } from "~/utils/session.server";
 import { createUser } from "~/utils/auth.server";
 import { ArrowLeft } from "lucide-react";
 import { Link } from "react-router";
+import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 
 export async function loader({ request }: ActionFunctionArgs) {
   await requireAdmin(request);
@@ -17,7 +21,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const username = formData.get("username");
   const password = formData.get("password");
   const name = formData.get("name");
-  const department = formData.get("department");
+  const department = formData.get("division");
   const role = formData.get("role");
 
   if (
@@ -61,131 +65,119 @@ export default function NewUser() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center space-x-4">
-        <Link
-          to="/admin/users"
-          className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
-        >
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          Back to Users
-        </Link>
+        <Button variant="ghost" size="sm" asChild>
+          <Link to="/admin/users">
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back to Users
+          </Link>
+        </Button>
       </div>
 
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Add New User</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Create a new worker or admin account
-        </p>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Add New User</CardTitle>
+          <CardDescription>
+            Create a new worker or admin account
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Form method="post" className="space-y-6">
+            <div className="grid grid-cols-1 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="name">Full Name</Label>
+                <Input
+                  type="text"
+                  name="name"
+                  id="name"
+                  required
+                  placeholder="John Doe"
+                />
+              </div>
 
-      <Form method="post" className="space-y-6 bg-white shadow px-4 py-5 sm:rounded-lg sm:p-6">
-        <div className="grid grid-cols-1 gap-6">
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-              Full Name
-            </label>
-            <input
-              type="text"
-              name="name"
-              id="name"
-              required
-              className="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
-              placeholder="John Doe"
-            />
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  type="text"
+                  name="username"
+                  id="username"
+                  required
+                  minLength={3}
+                  placeholder="johndoe"
+                />
+                <p className="text-sm text-muted-foreground">
+                  Must be at least 3 characters
+                </p>
+              </div>
 
-          <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-              Username
-            </label>
-            <input
-              type="text"
-              name="username"
-              id="username"
-              required
-              minLength={3}
-              className="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
-              placeholder="johndoe"
-            />
-            <p className="mt-1 text-sm text-gray-500">
-              Must be at least 3 characters
-            </p>
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  type="password"
+                  name="password"
+                  id="password"
+                  required
+                  minLength={6}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Must be at least 6 characters
+                </p>
+              </div>
 
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              Password
-            </label>
-            <input
-              type="password"
-              name="password"
-              id="password"
-              required
-              minLength={6}
-              className="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
-            />
-            <p className="mt-1 text-sm text-gray-500">
-              Must be at least 6 characters
-            </p>
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="division">Division</Label>
+                <select
+                  id="division"
+                  name="division"
+                  required
+                  className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">Select Division</option>
+                  <option value="Supervisor">Supervisor</option>
+                  <option value="HVAC">HVAC</option>
+                  <option value="Kitchen & Laundry">Kitchen & Laundry</option>
+                  <option value="Public Area">Public Area</option>
+                  <option value="Guest Room">Guest Room</option>
+                </select>
+              </div>
 
-          <div>
-            <label htmlFor="department" className="block text-sm font-medium text-gray-700">
-              Department
-            </label>
-            <input
-              type="text"
-              name="department"
-              id="department"
-              required
-              className="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
-              placeholder="Engineering"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="role" className="block text-sm font-medium text-gray-700">
-              Role
-            </label>
-            <select
-              id="role"
-              name="role"
-              required
-              className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            >
-              <option value="WORKER">Worker</option>
-              <option value="ADMIN">Admin</option>
-            </select>
-          </div>
-        </div>
-
-        {actionData?.error && (
-          <div className="rounded-md bg-red-50 p-4">
-            <div className="flex">
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-red-800">
-                  {actionData.error}
-                </h3>
+              <div className="space-y-2">
+                <Label htmlFor="role">Role</Label>
+                <select
+                  id="role"
+                  name="role"
+                  required
+                  defaultValue="WORKER"
+                  className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="WORKER">Worker</option>
+                  <option value="ADMIN">Admin</option>
+                </select>
               </div>
             </div>
-          </div>
-        )}
 
-        <div className="flex justify-end space-x-3">
-          <Link
-            to="/admin/users"
-            className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            Cancel
-          </Link>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSubmitting ? "Creating..." : "Create User"}
-          </button>
-        </div>
-      </Form>
+            {actionData?.error && (
+              <div className="rounded-md bg-destructive/15 p-4">
+                <div className="flex">
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-destructive">
+                      {actionData.error}
+                    </h3>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3">
+              <Button variant="outline" asChild>
+                <Link to="/admin/users">Cancel</Link>
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Creating..." : "Create User"}
+              </Button>
+            </div>
+          </Form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

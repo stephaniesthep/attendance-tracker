@@ -3,14 +3,14 @@ import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
 import { format } from "date-fns";
-import { ArrowLeft, Download, User, MapPin, Clock } from "lucide-react";
+import { ArrowLeft, User, MapPin, Clock, AlertCircle, Download } from "lucide-react";
 
 type PhotoData = {
   id: string;
   type: "checkin" | "checkout";
   photoUrl: string;
   userName: string;
-  userDepartment: string;
+  userDivision: string;
   date: string;
   time: string;
   locationName: string | null;
@@ -78,7 +78,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     type: type as "checkin" | "checkout",
     photoUrl: `/api/photo/${attendanceId}/${type}`,
     userName: attendance.user.name,
-    userDepartment: attendance.user.department,
+    userDivision: attendance.user.department,
     date: format(new Date(attendance.date), "EEEE, MMMM d, yyyy"),
     time: format(new Date(timeData), "HH:mm:ss"),
     locationName: locationNameData,
@@ -92,17 +92,19 @@ export default function PhotoPreview() {
   const { photo } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
+
   const handleDownload = () => {
-    const link = document.createElement("a");
+    const link = document.createElement('a');
     link.href = photo.photoUrl;
-    link.download = `${photo.userName}-${photo.type}-${photo.date.replace(/[,\s]/g, "-")}.jpg`;
+    link.download = `${photo.userName}_${photo.type}_${photo.date.replace(/,/g, '')}.jpg`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const handleBack = () => {
-    navigate(-1);
+    // Navigate back to admin attendance page
+    navigate("/admin/attendance");
   };
 
   return (
@@ -128,13 +130,6 @@ export default function PhotoPreview() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={handleDownload}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download
-            </button>
           </div>
         </div>
       </div>
@@ -166,7 +161,7 @@ export default function PhotoPreview() {
                   <User className="h-5 w-5 text-gray-400" />
                   <div>
                     <p className="text-sm font-medium text-gray-900">{photo.userName}</p>
-                    <p className="text-sm text-gray-500">{photo.userDepartment}</p>
+                    <p className="text-sm text-gray-500">{photo.userDivision}</p>
                   </div>
                 </div>
               </div>
@@ -203,19 +198,35 @@ export default function PhotoPreview() {
                         <p className="text-sm font-medium text-gray-900">{photo.locationName}</p>
                         {photo.location && (
                           <p className="text-xs text-gray-500 mt-1">
-                            {photo.location.lat.toFixed(6)}, {photo.location.lng.toFixed(6)}
+                            Coordinates: {photo.location.lat.toFixed(6)}, {photo.location.lng.toFixed(6)}
+                          </p>
+                        )}
+                        {/* Show confidence indicator if location name looks like fallback */}
+                        {photo.locationName.includes("Location ") && photo.locationName.includes("°") && (
+                          <p className="text-xs text-amber-600 mt-1 flex items-center">
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                            Low accuracy location
                           </p>
                         )}
                       </div>
                     ) : photo.location ? (
                       <div>
-                        <p className="text-sm font-medium text-gray-900">Coordinates</p>
+                        <p className="text-sm font-medium text-gray-900">Coordinates Only</p>
                         <p className="text-sm text-gray-500">
                           {photo.location.lat.toFixed(6)}, {photo.location.lng.toFixed(6)}
                         </p>
+                        <p className="text-xs text-red-500 mt-1 flex items-center">
+                          <AlertCircle className="h-3 w-3 mr-1" />
+                          No location name available
+                        </p>
                       </div>
                     ) : (
-                      <p className="text-sm text-gray-500">Location not available</p>
+                      <div>
+                        <p className="text-sm text-red-500 flex items-center">
+                          <AlertCircle className="h-4 w-4 mr-1" />
+                          Location not available
+                        </p>
+                      </div>
                     )}
                     
                     {photo.location && (

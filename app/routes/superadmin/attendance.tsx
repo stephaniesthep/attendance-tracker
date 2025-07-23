@@ -1,7 +1,6 @@
 import { useLoaderData } from "react-router";
-
 import type { LoaderFunctionArgs } from "react-router";
-import { requireAdmin } from "~/utils/session.server";
+import { requireSuperAdmin } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
 import { format, startOfDay, endOfDay } from "date-fns";
 import {
@@ -15,7 +14,7 @@ import {
   type ColumnFiltersState,
 } from "@tanstack/react-table";
 import { useState } from "react";
-import { ArrowUpDown, Calendar, Download, Search } from "lucide-react";
+import { ArrowUpDown, Calendar, Download, Search, BarChart3 } from "lucide-react";
 
 type AttendanceRecord = {
   id: string;
@@ -34,7 +33,7 @@ type AttendanceRecord = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  await requireAdmin(request);
+  await requireSuperAdmin(request);
   
   const url = new URL(request.url);
   const dateParam = url.searchParams.get("date");
@@ -106,10 +105,9 @@ const getShift = (checkInTime: string): string => {
 
 const columnHelper = createColumnHelper<AttendanceRecord>();
 
-export default function AdminAttendance() {
+export default function SuperAdminAttendance() {
   const { records, currentDate } = useLoaderData<typeof loader>();
   const [sorting, setSorting] = useState<SortingState>([]);
-
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
 
@@ -542,7 +540,10 @@ export default function AdminAttendance() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Daily Attendance Report</h1>
+          <h1 className="text-2xl font-semibold text-gray-900 flex items-center">
+            <BarChart3 className="h-6 w-6 mr-2" />
+            Attendance Reports
+          </h1>
           <p className="mt-1 text-sm text-gray-600">
             View attendance records with photos and location names for selected date
           </p>
@@ -576,10 +577,7 @@ export default function AdminAttendance() {
                     type="date"
                     value={currentDate}
                     onChange={(e) => {
-                      window.location.href = `/admin/attendance?date=${e.target.value}`;
-
-
-
+                      window.location.href = `/superadmin/attendance?date=${e.target.value}`;
                     }}
                     className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
                   />

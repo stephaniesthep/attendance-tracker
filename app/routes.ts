@@ -3,6 +3,7 @@ import { type RouteConfig, index, layout, route } from "@react-router/dev/routes
 export default [
   // Public routes
   route("login", "routes/login.tsx"),
+  route("public-photo/:attendanceId/:type", "routes/public-photo.$attendanceId.$type.tsx"),
   
   // Protected routes with layout
   layout("routes/layouts/protected.tsx", [
@@ -17,6 +18,13 @@ export default [
       route("admin/users", "routes/admin/users.tsx"),
       route("admin/users/new", "routes/admin/users.new.tsx"),
       route("admin/attendance", "routes/admin/attendance.tsx"),
+    ]),
+    
+    // Super Admin only routes
+    layout("routes/layouts/superadmin.tsx", [
+      route("superadmin", "routes/superadmin/index.tsx"),
+      route("superadmin/users", "routes/superadmin/users.tsx"),
+      route("superadmin/profile", "routes/superadmin/profile.tsx"),
     ]),
   ]),
   

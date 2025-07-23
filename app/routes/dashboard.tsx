@@ -4,9 +4,21 @@ import { requireUser } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
 import { format, startOfDay, endOfDay } from "date-fns";
 import { Clock, Calendar, CheckCircle, XCircle } from "lucide-react";
+import { redirect } from "react-router";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
+  
+  // Redirect superadmin to their panel
+  if (user.role === "SUPERADMIN") {
+    throw redirect("/superadmin");
+  }
+  
+  // Redirect admin to admin panel
+  if (user.role === "ADMIN") {
+    throw redirect("/admin");
+  }
+  
   const today = new Date();
   
   const todayAttendance = await prisma.attendance.findFirst({

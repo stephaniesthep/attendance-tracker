@@ -18,7 +18,15 @@ export async function action({ request }: ActionFunctionArgs) {
     return { error: "Invalid username or password" };
   }
 
-  return createUserSession(result.token, result.user.role === "ADMIN" ? "/admin" : "/dashboard");
+  // Determine redirect based on user role
+  let redirectTo = "/dashboard"; // Default for workers
+  if (result.user.role === "SUPERADMIN") {
+    redirectTo = "/superadmin";
+  } else if (result.user.role === "ADMIN") {
+    redirectTo = "/admin";
+  }
+  
+  return createUserSession(result.token, redirectTo);
 }
 
 export default function Login() {
