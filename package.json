@@ -9,7 +9,15 @@
     "typecheck:gen": "react-router typegen",
     "typecheck:check": "pnpm --package=typescript dlx tsc --build --pretty --watch",
     "typecheck": "pnpm typecheck:gen && pnpm typecheck:check",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:generate": "prisma generate",
+    "db:generate:prod": "prisma generate --schema=prisma/schema.production.prisma",
+    "db:push": "prisma db push",
+    "db:push:prod": "prisma db push --schema=prisma/schema.production.prisma",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:prod": "prisma migrate deploy --schema=prisma/schema.production.prisma",
+    "postinstall": "prisma generate",
+    "netlify:build": "npm run db:generate:prod && npm run build"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -41,7 +49,8 @@
     "react-router": "^7.7.0",
     "react-webcam": "^7.2.0",
     "remix-flat-routes": "^0.8.5",
-    "tailwind-merge": "^3.3.1"
+    "tailwind-merge": "^3.3.1",
+    "serverless-http": "^3.2.0"
   },
   "devDependencies": {
     "@react-router/dev": "^7.7.0",

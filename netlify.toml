@@ -1,10 +1,26 @@
 [build]
-  command = "npm run build"
+  command = "npm run netlify:build"
   publish = "build/client"
   functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "18"
+  DATABASE_PROVIDER = "postgresql"
+
+# Environment variables for production
+[context.production.environment]
+  DATABASE_PROVIDER = "postgresql"
+  NODE_ENV = "production"
+
+# Environment variables for branch deploys
+[context.branch-deploy.environment]
+  DATABASE_PROVIDER = "postgresql"
+  NODE_ENV = "production"
+
+# Environment variables for deploy previews
+[context.deploy-preview.environment]
+  DATABASE_PROVIDER = "postgresql"
+  NODE_ENV = "production"
 
 [[redirects]]
   from = "/api/*"
