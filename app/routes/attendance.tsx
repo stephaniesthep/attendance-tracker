@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useLoaderData, useFetcher } from "react-router";
+import { useLoaderData, useFetcher, useRevalidator } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
-import { startOfDay, endOfDay, format } from "date-fns";
+import { format } from "date-fns";
 import Webcam from "react-webcam";
 import { Camera, MapPin, Clock, Download, AlertCircle, CheckCircle } from "lucide-react";
 import {
@@ -17,25 +17,28 @@ import {
 } from "~/utils/location.client.enhanced";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const user = await requireUser(request);
-  const today = new Date();
-  
-  const todayAttendance = await prisma.attendance.findFirst({
-    where: {
-      userId: user.id,
-      date: {
-        gte: startOfDay(today),
-        lte: endOfDay(today),
+  try {
+    const user = await requireUser(request);
+    const today = format(new Date(), 'yyyy-MM-dd');
+    
+    const todayAttendance = await prisma.attendance.findFirst({
+      where: {
+        userId: user.id,
+        date: today,
       },
-    },
-  });
+    });
 
-  return { user, todayAttendance };
+    return { user, todayAttendance };
+  } catch (error) {
+    console.error("Attendance loader error:", error);
+    throw new Response("Unable to load attendance page", { status: 500 });
+  }
 }
 
 export default function Attendance() {
   const { user, todayAttendance } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
+  const revalidator = useRevalidator();
   const webcamRef = useRef<Webcam>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -46,6 +49,8 @@ export default function Attendance() {
   const [locationConfidence, setLocationConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
   const [locationQuality, setLocationQuality] = useState<number>(0);
   const [gpsAccuracy, setGpsAccuracy] = useState<string>('');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const getLocation = useCallback(async () => {
@@ -53,13 +58,13 @@ export default function Attendance() {
     setLocationError(null);
     
     try {
-      // Optimized location options for speed and high accuracy (<5m)
+      // Simplified location options for better reliability
       const locationOptions: LocationOptions = {
         enableHighAccuracy: true,
-        timeout: 8000, // Reduced timeout for faster response
-        maximumAge: 10000, // Reduced cache age for fresher data
-        progressiveAccuracy: true,
-        retryAttempts: 2, // Fewer retries for speed
+        timeout: 10000,
+        maximumAge: 30000,
+        retryAttempts: 1,
+        progressiveAccuracy: false,
       };
       
       const coords = await getCurrentLocation(locationOptions);
@@ -68,46 +73,25 @@ export default function Attendance() {
         throw new Error("Invalid coordinates received");
       }
       
-      // If GPS accuracy is poor (>5m), try to get a better reading
-      if (coords.accuracy && coords.accuracy > 5) {
-        console.log(`Initial GPS accuracy: ${coords.accuracy}m, attempting to improve...`);
-        
-        try {
-          // Try one more time with stricter settings for better accuracy
-          const betterCoords = await getCurrentLocation({
-            enableHighAccuracy: true,
-            timeout: 5000,
-            maximumAge: 0, // Force fresh reading
-            progressiveAccuracy: false, // Single precise reading
-          });
-          
-          // Use the better coordinates if they're more accurate
-          if (betterCoords.accuracy && betterCoords.accuracy < coords.accuracy) {
-            setLocation(betterCoords);
-            console.log(`Improved GPS accuracy: ${betterCoords.accuracy}m`);
-          } else {
-            setLocation(coords);
-          }
-        } catch {
-          // If second attempt fails, use original coordinates
-          setLocation(coords);
-        }
-      } else {
-        setLocation(coords);
+      setLocation(coords);
+      
+      // Try to get location name, but don't fail if it doesn't work
+      try {
+        const locationResult = await getDetailedLocation(coords.lat, coords.lng);
+        setLocationName(locationResult.name);
+        setLocationConfidence(locationResult.confidence);
+        setLocationQuality(locationResult.qualityScore);
+        console.log(`Location acquired: ${locationResult.name}`);
+      } catch (locationNameError) {
+        console.warn("Could not get location name:", locationNameError);
+        // Use coordinates as fallback
+        setLocationName(`${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`);
+        setLocationConfidence('low');
+        setLocationQuality(30);
       }
       
-      // Get detailed location information with quality scoring (parallel to GPS improvement)
-      const locationPromise = getDetailedLocation(coords.lat, coords.lng);
-      const locationResult = await locationPromise;
-      
-      setLocationName(locationResult.name);
-      setLocationConfidence(locationResult.confidence);
-      setLocationQuality(locationResult.qualityScore);
-      
-      console.log(`Location acquired: ${locationResult.name}`);
-      
     } catch (error) {
-      console.error("Enhanced location error:", error);
+      console.error("Location error:", error);
       setLocationError(error instanceof Error ? error.message : "Unable to get location");
       setLocation(null);
       setLocationName(null);
@@ -116,7 +100,7 @@ export default function Attendance() {
     } finally {
       setLocationLoading(false);
     }
-  }, [location]);
+  }, []);
 
   const addOverlayToImage = useCallback((imageSrc: string) => {
     return new Promise<string>((resolve) => {
@@ -233,6 +217,10 @@ export default function Attendance() {
       return;
     }
 
+    // Clear any previous errors
+    setSubmitError(null);
+    setSubmitSuccess(null);
+
     fetcher.submit(
       {
         action: "checkin",
@@ -249,6 +237,10 @@ export default function Attendance() {
       alert("Please capture a photo and enable location services.");
       return;
     }
+
+    // Clear any previous errors
+    setSubmitError(null);
+    setSubmitSuccess(null);
 
     fetcher.submit(
       {
@@ -269,6 +261,65 @@ export default function Attendance() {
 
   const isSubmitting = fetcher.state === "submitting";
 
+  // Handle fetcher responses
+  useEffect(() => {
+    // Handle errors - when fetcher has an error or returns error data
+    if (fetcher.state === "idle") {
+      if (fetcher.data && typeof fetcher.data === 'object' && 'error' in fetcher.data) {
+        // Handle structured error response
+        setSubmitError(fetcher.data.error as string);
+        // If the error is about already being checked in, revalidate to get current status
+        if ((fetcher.data.error as string).includes('already checked in')) {
+          revalidator.revalidate();
+        }
+      }
+    }
+  }, [fetcher.state, fetcher.data, revalidator]);
+
+  // Handle successful redirects (when fetcher completes and we're back on attendance page)
+  useEffect(() => {
+    // Check if we just completed a submission and are back on the attendance page
+    if (fetcher.state === "idle" &&
+        fetcher.data === null &&
+        window.location.pathname === '/attendance' &&
+        capturedImage &&
+        !submitError &&
+        !submitSuccess) {
+      
+      // We had a successful submission, show success message and revalidate
+      const lastAction = fetcher.formData?.get('action');
+      if (lastAction === 'checkin') {
+        setSubmitSuccess("Successfully checked in!");
+      } else if (lastAction === 'checkout') {
+        setSubmitSuccess("Successfully checked out!");
+      }
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSubmitSuccess(null), 3000);
+      
+      // Revalidate the loader data to get updated attendance status
+      revalidator.revalidate();
+    }
+  }, [fetcher.state, fetcher.data, fetcher.formData, capturedImage, submitError, submitSuccess, revalidator]);
+
+  // Handle fetcher errors (network errors, etc.)
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data === undefined) {
+      // This might indicate a network error or server error
+      const lastSubmission = fetcher.formData;
+      if (lastSubmission && (submitError === null && submitSuccess === null)) {
+        setSubmitError("Network error occurred. Please try again.");
+      }
+    }
+  }, [fetcher.state, fetcher.data, submitError, submitSuccess]);
+
+  // Clear errors when starting new capture
+  const startCaptureWithErrorClear = async () => {
+    setSubmitError(null);
+    setSubmitSuccess(null);
+    await startCapture();
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
@@ -288,7 +339,7 @@ export default function Attendance() {
                   <h3 className="text-lg font-medium text-gray-900">Current Status</h3>
                   <p className="mt-1 text-sm text-gray-600">
                     {todayAttendance
-                      ? todayAttendance.checkOutTime
+                      ? todayAttendance.checkOut
                         ? "You have completed your attendance for today"
                         : "You are checked in"
                       : "You have not checked in yet"}
@@ -302,6 +353,31 @@ export default function Attendance() {
                 </div>
               </div>
             </div>
+
+            {/* Error and Success Messages */}
+            {submitError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex items-center">
+                  <AlertCircle className="h-5 w-5 text-red-400 mr-2" />
+                  <div>
+                    <h3 className="text-sm font-medium text-red-800">Error</h3>
+                    <p className="text-sm text-red-700 mt-1">{submitError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {submitSuccess && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-green-400 mr-2" />
+                  <div>
+                    <h3 className="text-sm font-medium text-green-800">Success</h3>
+                    <p className="text-sm text-green-700 mt-1">{submitSuccess}</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Camera Section */}
             {showCamera ? (
@@ -380,7 +456,7 @@ export default function Attendance() {
                       Download
                     </button>
                     <button
-                      onClick={startCapture}
+                      onClick={startCaptureWithErrorClear}
                       className="mobile-button text-sm text-indigo-600 hover:text-indigo-500 px-3 py-2 rounded-md border border-indigo-200 hover:bg-indigo-50"
                     >
                       Retake Photo
@@ -397,7 +473,7 @@ export default function Attendance() {
                 </p>
                 <div className="mt-6">
                   <button
-                    onClick={startCapture}
+                    onClick={startCaptureWithErrorClear}
                     disabled={locationLoading}
                     className="mobile-button inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -420,7 +496,7 @@ export default function Attendance() {
                     {isSubmitting ? "Checking In..." : "Check In"}
                   </button>
                 )}
-                {todayAttendance && !todayAttendance.checkOutTime && (
+                {todayAttendance && !todayAttendance.checkOut && (
                   <button
                     onClick={handleCheckOut}
                     disabled={isSubmitting}

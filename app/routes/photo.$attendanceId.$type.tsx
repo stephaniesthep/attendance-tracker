@@ -2,6 +2,7 @@ import { useLoaderData, useNavigate } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
+import { userHasRole } from "~/utils/auth.server";
 import { format } from "date-fns";
 import { ArrowLeft, User, MapPin, Clock, AlertCircle, Download } from "lucide-react";
 
@@ -18,7 +19,7 @@ type PhotoData = {
 };
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const user = await requireUser(request);
+  const baseUser = await requireUser(request);
   const { attendanceId, type } = params;
 
   if (!attendanceId || !type) {
@@ -27,6 +28,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   if (type !== "checkin" && type !== "checkout") {
     throw new Response("Invalid photo type", { status: 400 });
+  }
+
+  // Get user with roles for permission checking
+  const userWithRoles = await prisma.user.findUnique({
+    where: { id: baseUser.id },
+    include: { roles: true },
+  });
+
+  if (!userWithRoles) {
+    throw new Response("User not found", { status: 404 });
   }
 
   // Get the attendance record
@@ -38,7 +49,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           id: true,
           name: true,
           department: true,
-          role: true,
+          roles: true,
         },
       },
     },
@@ -48,16 +59,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Attendance record not found", { status: 404 });
   }
 
-  // Check permissions: users can only view their own photos, admins can view all
-  if (user.role !== "ADMIN" && attendance.userId !== user.id) {
+  // Check permissions: users can only view their own photos, admins/superadmins can view all
+  const canViewAllPhotos = userHasRole(userWithRoles, "ADMIN") || userHasRole(userWithRoles, "SUPERADMIN");
+  if (!canViewAllPhotos && attendance.userId !== baseUser.id) {
     throw new Response("Unauthorized", { status: 403 });
   }
 
-  // Get the photo data
-  const photoData = type === "checkin" ? attendance.checkInPhoto : attendance.checkOutPhoto;
-  const timeData = type === "checkin" ? attendance.checkInTime : attendance.checkOutTime;
-  const locationData = type === "checkin" ? attendance.checkInLocation : attendance.checkOutLocation;
-  const locationNameData = type === "checkin" ? (attendance as any).checkInLocationName : (attendance as any).checkOutLocationName;
+  // Get the photo data - using correct field names from schema
+  const photoData = type === "checkin" ? attendance.photoIn : attendance.photoOut;
+  const timeData = type === "checkin" ? attendance.checkIn : attendance.checkOut;
+  const locationData = type === "checkin" ? attendance.locationIn : attendance.locationOut;
 
   if (!photoData || !timeData) {
     throw new Response("Photo not found", { status: 404 });
@@ -78,10 +89,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     type: type as "checkin" | "checkout",
     photoUrl: `/api/photo/${attendanceId}/${type}`,
     userName: attendance.user.name,
-    userDivision: attendance.user.department,
+    userDivision: attendance.user.department || "No Department",
     date: format(new Date(attendance.date), "EEEE, MMMM d, yyyy"),
     time: format(new Date(timeData), "HH:mm:ss"),
-    locationName: locationNameData,
+    locationName: null, // Location names are not stored separately in current schema
     location,
   };
 

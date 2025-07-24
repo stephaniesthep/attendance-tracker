@@ -3,44 +3,53 @@ import type { LoaderFunctionArgs } from "react-router";
 import { requireAdmin } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
 import { Users, Calendar, Clock, TrendingUp } from "lucide-react";
-import { startOfDay, endOfDay } from "date-fns";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   
-  const today = new Date();
+  const today = new Date().toISOString().split('T')[0]; // Format as YYYY-MM-DD
   
   // Get statistics
   const totalUsers = await prisma.user.count();
-  const totalWorkers = await prisma.user.count({ where: { role: "WORKER" } });
-  const totalAdmins = await prisma.user.count({ where: { role: "ADMIN" } });
+  
+  // Count users by role using the new RBAC system
+  const totalWorkers = await prisma.user.count({
+    where: {
+      roles: {
+        some: {
+          name: "WORKER"
+        }
+      }
+    }
+  });
+  
+  const totalAdmins = await prisma.user.count({
+    where: {
+      roles: {
+        some: {
+          name: "ADMIN"
+        }
+      }
+    }
+  });
   
   const todayAttendance = await prisma.attendance.count({
     where: {
-      date: {
-        gte: startOfDay(today),
-        lte: endOfDay(today),
-      },
+      date: today,
     },
   });
   
   const checkedInToday = await prisma.attendance.count({
     where: {
-      date: {
-        gte: startOfDay(today),
-        lte: endOfDay(today),
-      },
-      checkOutTime: null,
+      date: today,
+      checkOut: null,
     },
   });
   
   const completedToday = await prisma.attendance.count({
     where: {
-      date: {
-        gte: startOfDay(today),
-        lte: endOfDay(today),
-      },
-      checkOutTime: { not: null },
+      date: today,
+      checkOut: { not: null },
     },
   });
 
@@ -151,21 +160,7 @@ export default function AdminDashboard() {
           <h3 className="text-lg leading-6 font-medium text-gray-900">
             Quick Actions
           </h3>
-          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Link
-              to="/admin/users/new"
-              className="relative rounded-lg border border-gray-300 bg-white px-6 py-5 shadow-sm flex items-center space-x-3 hover:border-gray-400 focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"
-            >
-              <div className="flex-shrink-0">
-                <Users className="h-6 w-6 text-gray-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <span className="absolute inset-0" aria-hidden="true" />
-                <p className="text-sm font-medium text-gray-900">Add New User</p>
-                <p className="text-sm text-gray-500">Create a new worker or admin account</p>
-              </div>
-            </Link>
-
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-1">
             <Link
               to="/admin/attendance"
               className="relative rounded-lg border border-gray-300 bg-white px-6 py-5 shadow-sm flex items-center space-x-3 hover:border-gray-400 focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"

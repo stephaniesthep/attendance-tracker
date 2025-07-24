@@ -1,36 +1,46 @@
 import { useLoaderData, Form, Link } from "react-router";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { requireSuperAdmin } from "~/utils/session.server";
-import { prisma } from "~/utils/db.server";
 import { redirect } from "react-router";
-import bcrypt from "bcryptjs";
+import { prisma } from "~/utils/db.server";
+import { createUser, updateUser, deleteUser, getAllRoles } from "~/utils/auth.server";
+import { superAdminOnly } from "~/utils/middleware.server";
 import { Users, Plus, Edit, Trash2, Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 
-export async function loader({ request }: LoaderFunctionArgs) {
-  await requireSuperAdmin(request);
-  
+export const loader = superAdminOnly(async ({ user }) => {
+  // Get all users with their roles
   const users = await prisma.user.findMany({
+    include: {
+      roles: {
+        include: {
+          permissions: true,
+        },
+      },
+    },
     orderBy: [
-      { role: "asc" },
       { name: "asc" }
     ],
   });
 
-  return { users };
-}
+  // Get all available roles for the create/edit forms
+  const roles = await getAllRoles();
 
-export async function action({ request }: ActionFunctionArgs) {
-  await requireSuperAdmin(request);
-  
+  return { users, roles, currentUser: user };
+});
+
+export const action = superAdminOnly(async ({ request, user }) => {
   const formData = await request.formData();
   const action = formData.get("action");
 
   if (action === "delete") {
     const userId = formData.get("userId") as string;
-    await prisma.user.delete({
-      where: { id: userId },
-    });
+    
+    // Prevent deletion of current user
+    if (userId === user.id) {
+      throw new Error("Cannot delete your own account");
+    }
+    
+    await deleteUser(userId);
     return redirect("/superadmin/users");
   }
 
@@ -39,18 +49,14 @@ export async function action({ request }: ActionFunctionArgs) {
     const password = formData.get("password") as string;
     const name = formData.get("name") as string;
     const department = formData.get("department") as string;
-    const role = formData.get("role") as "ADMIN" | "WORKER";
+    const roleIds = formData.getAll("roleIds") as string[];
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    await prisma.user.create({
-      data: {
-        username,
-        password: hashedPassword,
-        name,
-        department,
-        role,
-      },
+    await createUser({
+      username,
+      password,
+      name,
+      department: department || undefined,
+      roleIds,
     });
 
     return redirect("/superadmin/users");
@@ -61,33 +67,25 @@ export async function action({ request }: ActionFunctionArgs) {
     const username = formData.get("username") as string;
     const name = formData.get("name") as string;
     const department = formData.get("department") as string;
-    const role = formData.get("role") as "ADMIN" | "WORKER";
+    const roleIds = formData.getAll("roleIds") as string[];
     const password = formData.get("password") as string;
 
-    const updateData: any = {
+    await updateUser(userId, {
       username,
       name,
-      department,
-      role,
-    };
-
-    if (password && password.trim() !== "") {
-      updateData.password = await bcrypt.hash(password, 10);
-    }
-
-    await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
+      department: department || undefined,
+      password: password || undefined,
+      roleIds,
     });
 
     return redirect("/superadmin/users");
   }
 
   return null;
-}
+});
 
 export default function SuperAdminUsers() {
-  const { users } = useLoaderData<typeof loader>();
+  const { users, roles, currentUser } = useLoaderData<typeof loader>();
   const [showPasswords, setShowPasswords] = useState<{ [key: string]: boolean }>({});
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -99,42 +97,23 @@ export default function SuperAdminUsers() {
     }));
   };
 
-  const getPasswordDisplay = (user: any) => {
-    // For demonstration purposes, show known passwords for seeded users
-    // In a real application, you would never store or display actual passwords
-    const knownPasswords: { [key: string]: string } = {
-      'superadmin': 'superadmin123',
-      'admin1': 'admin123',
-      'admin2': 'admin123',
-      'admin3': 'admin123',
-      'admin4': 'admin123',
-      'worker1': 'worker123',
-      'worker2': 'worker123',
-      'worker3': 'worker123',
-      'worker4': 'worker123',
-      'worker5': 'worker123',
-      'worker6': 'worker123',
-      'worker7': 'worker123',
-      'worker8': 'worker123',
-      'worker9': 'worker123',
-      'worker10': 'worker123',
-      'worker11': 'worker123',
-      'worker12': 'worker123',
-      'worker13': 'worker123',
-      'worker14': 'worker123',
-      'worker15': 'worker123',
-      'worker16': 'worker123',
-      'worker17': 'worker123',
-      'worker18': 'worker123',
-      'worker19': 'worker123',
-      'worker20': 'worker123',
-    };
+  const getUserPrimaryRole = (user: { roles: { name: string }[] }) => {
+    if (!user.roles || user.roles.length === 0) return "WORKER";
     
-    return knownPasswords[user.username] || '[Password encrypted - Click edit to change]';
+    // Role priority: SUPERADMIN > ADMIN > WORKER
+    const roleOrder = { SUPERADMIN: 0, ADMIN: 1, WORKER: 2 };
+    
+    const sortedRoles = user.roles.sort((a: { name: string }, b: { name: string }) => {
+      const aOrder = roleOrder[a.name as keyof typeof roleOrder] ?? 3;
+      const bOrder = roleOrder[b.name as keyof typeof roleOrder] ?? 3;
+      return aOrder - bOrder;
+    });
+    
+    return sortedRoles[0]?.name || "WORKER";
   };
 
-  const getRoleColor = (role: string) => {
-    switch (role) {
+  const getRoleColor = (roleName: string) => {
+    switch (roleName) {
       case "SUPERADMIN":
         return "bg-red-100 text-red-800";
       case "ADMIN":
@@ -143,6 +122,21 @@ export default function SuperAdminUsers() {
         return "bg-green-100 text-green-800";
       default:
         return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getPasswordDisplay = (user: { roles: { name: string }[] }) => {
+    // For demo purposes, show default passwords based on role
+    const primaryRole = getUserPrimaryRole(user);
+    switch (primaryRole) {
+      case "SUPERADMIN":
+        return "superadmin123";
+      case "ADMIN":
+        return "admin123";
+      case "WORKER":
+        return "worker123";
+      default:
+        return "[Encrypted]";
     }
   };
 
@@ -155,7 +149,7 @@ export default function SuperAdminUsers() {
             User Management
           </h1>
           <p className="mt-1 text-sm text-gray-600">
-            Manage all user accounts, passwords, and permissions
+            Manage all user accounts, roles, and permissions
           </p>
         </div>
         <button
@@ -207,20 +201,26 @@ export default function SuperAdminUsers() {
                   <input
                     type="text"
                     name="department"
-                    required
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Role</label>
-                  <select
-                    name="role"
-                    required
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                  >
-                    <option value="WORKER">Worker</option>
-                    <option value="ADMIN">Admin</option>
-                  </select>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700">Roles</label>
+                  <div className="mt-2 space-y-2">
+                    {roles.map((role: { id: string; displayName: string; description: string }) => (
+                      <label key={role.id} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          name="roleIds"
+                          value={role.id}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">
+                          {role.displayName} - {role.description}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div className="flex justify-end space-x-3">
@@ -246,7 +246,7 @@ export default function SuperAdminUsers() {
       {/* Users Table */}
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul className="divide-y divide-gray-200">
-          {users.map((user) => (
+          {users.map((user: { id: string; username: string; name: string; department: string | null; roles: { id: string; name: string; displayName: string }[] }) => (
             <li key={user.id} className="px-6 py-4">
               {editingUser === user.id ? (
                 <Form method="post" className="space-y-4">
@@ -286,23 +286,28 @@ export default function SuperAdminUsers() {
                       <input
                         type="text"
                         name="department"
-                        defaultValue={user.department}
-                        required
+                        defaultValue={user.department || ""}
                         className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Role</label>
-                      <select
-                        name="role"
-                        defaultValue={user.role}
-                        disabled={user.role === "SUPERADMIN"}
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100"
-                      >
-                        <option value="WORKER">Worker</option>
-                        <option value="ADMIN">Admin</option>
-                        {user.role === "SUPERADMIN" && <option value="SUPERADMIN">Super Admin</option>}
-                      </select>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700">Roles</label>
+                      <div className="mt-2 space-y-2">
+                        {roles.map((role: { id: string; displayName: string; description: string }) => (
+                          <label key={role.id} className="flex items-center">
+                            <input
+                              type="checkbox"
+                              name="roleIds"
+                              value={role.id}
+                              defaultChecked={user.roles.some((userRole: { id: string }) => userRole.id === role.id)}
+                              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                            />
+                            <span className="ml-2 text-sm text-gray-700">
+                              {role.displayName} - {role.description}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   </div>
                   <div className="flex justify-end space-x-3">
@@ -326,8 +331,8 @@ export default function SuperAdminUsers() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-3">
                       <div className="flex-shrink-0">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleColor(user.role)}`}>
-                          {user.role}
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleColor(getUserPrimaryRole(user))}`}>
+                          {getUserPrimaryRole(user)}
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
@@ -335,8 +340,15 @@ export default function SuperAdminUsers() {
                           {user.name}
                         </p>
                         <p className="text-sm text-gray-500 truncate">
-                          @{user.username} • {user.department}
+                          @{user.username} • {user.department || 'No Department'} • {user.roles.length} role(s)
                         </p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {user.roles.map((role: { id: string; displayName: string }) => (
+                            <span key={role.id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                              {role.displayName}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -362,7 +374,7 @@ export default function SuperAdminUsers() {
                       >
                         <Edit className="h-4 w-4" />
                       </button>
-                      {user.role !== "SUPERADMIN" && (
+                      {user.id !== currentUser.id && (
                         <Form method="post" className="inline">
                           <input type="hidden" name="action" value="delete" />
                           <input type="hidden" name="userId" value={user.id} />
@@ -378,6 +390,11 @@ export default function SuperAdminUsers() {
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </Form>
+                      )}
+                      {user.id === currentUser.id && (
+                        <span className="text-xs text-gray-500 italic">
+                          Current User
+                        </span>
                       )}
                     </div>
                   </div>

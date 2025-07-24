@@ -1,21 +1,37 @@
-import { useLoaderData } from "react-router";
+import { useLoaderData, useRevalidator } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
+import { getUserPrimaryRole } from "~/utils/auth.server";
 import { prisma } from "~/utils/db.server";
-import { format, startOfDay, endOfDay } from "date-fns";
+import { format } from "date-fns";
 import { Clock, Calendar, CheckCircle, XCircle } from "lucide-react";
+import { useEffect } from "react";
 import { redirect } from "react-router";
+import type { User } from "@prisma/client";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
   
+  // Get user with roles to determine primary role
+  const userWithRoles = await prisma.user.findUnique({
+    where: { id: user.id },
+    include: { roles: true },
+  });
+  
+  if (!userWithRoles) {
+    throw new Error("User not found");
+  }
+  
+  // Determine user's primary role using RBAC
+  const primaryRole = getUserPrimaryRole(userWithRoles as User & { roles: { name: string }[] });
+  
   // Redirect superadmin to their panel
-  if (user.role === "SUPERADMIN") {
+  if (primaryRole === "SUPERADMIN") {
     throw redirect("/superadmin");
   }
   
   // Redirect admin to admin panel
-  if (user.role === "ADMIN") {
+  if (primaryRole === "ADMIN") {
     throw redirect("/admin");
   }
   
@@ -43,6 +59,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function Dashboard() {
   const { user, todayAttendance, recentAttendance } = useLoaderData<typeof loader>();
+  const revalidator = useRevalidator();
+
+  // Auto-refresh every 30 seconds to get latest attendance data
+  useEffect(() => {
+    const interval = setInterval(() => {
+      revalidator.revalidate();
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [revalidator]);
 
   return (
     <div className="space-y-6">

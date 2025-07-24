@@ -1,15 +1,39 @@
 import { Outlet, Link, useLoaderData, Form } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
+import { getUserWithPermissions } from "~/utils/rbac.server";
+import { userHasRole } from "~/utils/auth.server";
 import { LogOut, Home, Camera, Users, User, Shield } from "lucide-react";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
-  return { user };
+  // Get user with roles for navigation display
+  const userWithRoles = await getUserWithPermissions(user.id);
+  if (!userWithRoles) {
+    throw new Error("User not found");
+  }
+  
+  // Check roles on server side and pass to client
+  const isSuperAdmin = userHasRole(userWithRoles, "SUPERADMIN");
+  const isAdmin = userHasRole(userWithRoles, "ADMIN");
+  const roleNames = userWithRoles.roles?.map((r: { name: string }) => r.name).join(", ") || "WORKER";
+  
+  return {
+    user: {
+      id: userWithRoles.id,
+      name: userWithRoles.name,
+      username: userWithRoles.username,
+      department: userWithRoles.department,
+      createdAt: userWithRoles.createdAt,
+    },
+    isSuperAdmin,
+    isAdmin,
+    roleNames,
+  };
 }
 
 export default function ProtectedLayout() {
-  const { user } = useLoaderData<typeof loader>();
+  const { user, isSuperAdmin, isAdmin, roleNames } = useLoaderData<typeof loader>();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -35,7 +59,7 @@ export default function ProtectedLayout() {
                   <Camera className="w-4 h-4 mr-2" />
                   Attendance
                 </Link>
-                {user.role === "SUPERADMIN" && (
+                {isSuperAdmin && (
                   <Link
                     to="/superadmin"
                     className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
@@ -44,7 +68,7 @@ export default function ProtectedLayout() {
                     Super Admin
                   </Link>
                 )}
-                {user.role === "ADMIN" && (
+                {isAdmin && (
                   <Link
                     to="/admin"
                     className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
@@ -65,7 +89,7 @@ export default function ProtectedLayout() {
             <div className="hidden sm:ml-6 sm:flex sm:items-center">
               <div className="flex items-center space-x-4">
                 <span className="text-sm text-gray-700">
-                  {user.name} ({user.role})
+                  {user.name} ({roleNames})
                 </span>
                 <Form method="post" action="/api/auth/logout">
                   <button

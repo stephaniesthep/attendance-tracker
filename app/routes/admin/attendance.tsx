@@ -1,9 +1,9 @@
-import { useLoaderData } from "react-router";
+import { useLoaderData, useRevalidator } from "react-router";
 
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAdmin } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
-import { format, startOfDay, endOfDay } from "date-fns";
+import { format } from "date-fns";
 import {
   createColumnHelper,
   flexRender,
@@ -14,8 +14,8 @@ import {
   type SortingState,
   type ColumnFiltersState,
 } from "@tanstack/react-table";
-import { useState } from "react";
-import { ArrowUpDown, Calendar, Download, Search } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ArrowUpDown, Calendar, Download, Search, RefreshCw } from "lucide-react";
 
 type AttendanceRecord = {
   id: string;
@@ -38,47 +38,51 @@ export async function loader({ request }: LoaderFunctionArgs) {
   
   const url = new URL(request.url);
   const dateParam = url.searchParams.get("date");
-  const date = dateParam ? new Date(dateParam) : new Date();
+  const date = dateParam ? dateParam : format(new Date(), 'yyyy-MM-dd');
   
   const attendances = await prisma.attendance.findMany({
     where: {
-      date: {
-        gte: startOfDay(date),
-        lte: endOfDay(date),
-      },
+      date: date,
     },
     include: {
       user: {
         select: {
           name: true,
-          department: true,
         },
       },
     },
     orderBy: {
-      checkInTime: "desc",
+      checkIn: "desc",
     },
   });
 
-  const records: AttendanceRecord[] = attendances.map((attendance) => ({
-    id: attendance.id,
-    userName: attendance.user.name,
-    userDivision: (attendance.user as any).division || attendance.user.department,
-    date: format(new Date(attendance.date), "yyyy-MM-dd"),
-    checkInTime: format(new Date(attendance.checkInTime), "HH:mm:ss"),
-    checkOutTime: attendance.checkOutTime
-      ? format(new Date(attendance.checkOutTime), "HH:mm:ss")
-      : null,
-    duration: attendance.duration,
-    checkInLocation: attendance.checkInLocation,
-    checkInLocationName: (attendance as any).checkInLocationName || null,
-    checkOutLocation: attendance.checkOutLocation,
-    checkOutLocationName: (attendance as any).checkOutLocationName || null,
-    checkInPhoto: attendance.checkInPhoto,
-    checkOutPhoto: attendance.checkOutPhoto,
-  }));
+  const records: AttendanceRecord[] = attendances.map((attendance) => {
+    // Calculate duration if both check-in and check-out exist
+    let duration = null;
+    if (attendance.checkIn && attendance.checkOut) {
+      const checkInTime = new Date(attendance.checkIn);
+      const checkOutTime = new Date(attendance.checkOut);
+      duration = Math.floor((checkOutTime.getTime() - checkInTime.getTime()) / (1000 * 60)); // duration in minutes
+    }
 
-  return { records, currentDate: format(date, "yyyy-MM-dd") };
+    return {
+      id: attendance.id,
+      userName: attendance.user.name,
+      userDivision: "General", // Default since department field may not exist
+      date: attendance.date,
+      checkInTime: attendance.checkIn ? format(new Date(attendance.checkIn), "HH:mm:ss") : "",
+      checkOutTime: attendance.checkOut ? format(new Date(attendance.checkOut), "HH:mm:ss") : null,
+      duration: duration,
+      checkInLocation: attendance.locationIn || "",
+      checkInLocationName: null, // This field doesn't exist in current schema
+      checkOutLocation: attendance.locationOut || null,
+      checkOutLocationName: null, // This field doesn't exist in current schema
+      checkInPhoto: attendance.photoIn || "",
+      checkOutPhoto: attendance.photoOut || null,
+    };
+  });
+
+  return { records, currentDate: date };
 }
 
 // Function to determine shift based on check-in time
@@ -108,10 +112,26 @@ const columnHelper = createColumnHelper<AttendanceRecord>();
 
 export default function AdminAttendance() {
   const { records, currentDate } = useLoaderData<typeof loader>();
+  const revalidator = useRevalidator();
   const [sorting, setSorting] = useState<SortingState>([]);
-
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
+  const [isAutoRefresh, setIsAutoRefresh] = useState(true);
+
+  // Auto-refresh every 30 seconds to get latest attendance data
+  useEffect(() => {
+    if (!isAutoRefresh) return;
+
+    const interval = setInterval(() => {
+      revalidator.revalidate();
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [revalidator, isAutoRefresh]);
+
+  const handleManualRefresh = () => {
+    revalidator.revalidate();
+  };
 
   const columns = [
     columnHelper.accessor("userName", {
@@ -548,6 +568,14 @@ export default function AdminAttendance() {
           </p>
         </div>
         <div className="flex space-x-2">
+          <button
+            onClick={handleManualRefresh}
+            disabled={revalidator.state === "loading"}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${revalidator.state === "loading" ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
           <button
             onClick={exportToCSV}
             className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"

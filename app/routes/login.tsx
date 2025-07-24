@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Form, useActionData, useNavigation } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
-import { authenticateUser } from "~/utils/auth.server";
+import { authenticateUser, getUserPrimaryRole } from "~/utils/auth.server";
 import { createUserSession } from "~/utils/session.server";
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -18,12 +18,23 @@ export async function action({ request }: ActionFunctionArgs) {
     return { error: "Invalid username or password" };
   }
 
-  // Determine redirect based on user role
-  let redirectTo = "/dashboard"; // Default for users
-  if (result.user.role === "SUPERADMIN") {
-    redirectTo = "/superadmin";
-  } else if (result.user.role === "ADMIN") {
-    redirectTo = "/admin";
+  // Determine redirect based on user's primary role using RBAC
+  let redirectTo = "/attendance"; // Default for workers
+  
+  // The user returned from authenticateUser includes roles
+  const primaryRole = getUserPrimaryRole(result.user as any);
+  
+  switch (primaryRole) {
+    case "SUPERADMIN":
+      redirectTo = "/superadmin";
+      break;
+    case "ADMIN":
+      redirectTo = "/admin";
+      break;
+    case "WORKER":
+    default:
+      redirectTo = "/attendance";
+      break;
   }
   
   return createUserSession(result.token, redirectTo);

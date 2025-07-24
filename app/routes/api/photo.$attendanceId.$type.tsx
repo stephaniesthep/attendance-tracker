@@ -1,9 +1,10 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
+import { userHasRole } from "~/utils/auth.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const user = await requireUser(request);
+  const baseUser = await requireUser(request);
   const { attendanceId, type } = params;
 
   if (!attendanceId || !type) {
@@ -14,6 +15,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Invalid photo type", { status: 400 });
   }
 
+  // Get user with roles for permission checking
+  const userWithRoles = await prisma.user.findUnique({
+    where: { id: baseUser.id },
+    include: { roles: true },
+  });
+
+  if (!userWithRoles) {
+    throw new Response("User not found", { status: 404 });
+  }
+
   // Get the attendance record
   const attendance = await prisma.attendance.findUnique({
     where: { id: attendanceId },
@@ -22,7 +33,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         select: {
           id: true,
           name: true,
-          role: true,
+          roles: true,
         },
       },
     },
@@ -32,13 +43,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Attendance record not found", { status: 404 });
   }
 
-  // Check permissions: users can only view their own photos, admins can view all
-  if (user.role !== "ADMIN" && attendance.userId !== user.id) {
+  // Check permissions: users can only view their own photos, admins/superadmins can view all
+  const canViewAllPhotos = userHasRole(userWithRoles, "ADMIN") || userHasRole(userWithRoles, "SUPERADMIN");
+  if (!canViewAllPhotos && attendance.userId !== baseUser.id) {
     throw new Response("Unauthorized", { status: 403 });
   }
 
-  // Get the photo data
-  const photoData = type === "checkin" ? attendance.checkInPhoto : attendance.checkOutPhoto;
+  // Get the photo data - using correct field names from schema
+  const photoData = type === "checkin" ? attendance.photoIn : attendance.photoOut;
 
   if (!photoData) {
     throw new Response("Photo not found", { status: 404 });
@@ -58,7 +70,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         "Content-Type": mimeType,
         "Content-Length": buffer.length.toString(),
         "Cache-Control": "public, max-age=31536000", // Cache for 1 year
-        "Content-Disposition": `inline; filename="${attendance.user.name}-${type}-${attendance.date.toISOString().split('T')[0]}.${mimeType.split('/')[1]}"`,
+        "Content-Disposition": `inline; filename="${attendance.user.name}-${type}-${attendance.date}.${mimeType.split('/')[1]}"`,
       },
     });
   }

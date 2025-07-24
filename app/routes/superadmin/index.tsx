@@ -10,7 +10,7 @@ import {
   Calendar,
   Clock
 } from "lucide-react";
-import { format, startOfDay, endOfDay, subDays } from "date-fns";
+import { format, subDays } from "date-fns";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireSuperAdmin(request);
@@ -21,11 +21,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Get total users count
   const totalUsers = await prisma.user.count();
   
-  // Get users by role
-  const usersByRole = await prisma.user.groupBy({
-    by: ['role'],
-    _count: {
-      role: true,
+  // Get users by role using RBAC system
+  const usersByRole = await prisma.role.findMany({
+    include: {
+      _count: {
+        select: {
+          users: true,
+        },
+      },
     },
   });
   
@@ -53,7 +56,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       user: {
         select: {
           name: true,
-          role: true,
+          roles: {
+            select: {
+              name: true,
+            },
+          },
         },
       },
     },
@@ -74,9 +81,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function SuperAdminDashboard() {
   const { user, stats } = useLoaderData<typeof loader>();
   
-  const getRoleCount = (role: string) => {
-    const roleData = stats.usersByRole.find(r => r.role === role);
-    return roleData?._count.role || 0;
+  const getRoleCount = (roleName: string) => {
+    const roleData = stats.usersByRole.find(r => r.name === roleName);
+    return roleData?._count.users || 0;
   };
   
   const attendanceChange = stats.todayAttendance - stats.yesterdayAttendance;
@@ -222,7 +229,7 @@ export default function SuperAdminDashboard() {
                         {attendance.user.name}
                       </div>
                       <div className="text-sm text-gray-500">
-                        {attendance.user.role}
+                        {attendance.user.roles[0]?.name || 'No Role'}
                       </div>
                     </div>
                   </div>

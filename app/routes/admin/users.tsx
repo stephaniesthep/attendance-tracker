@@ -2,26 +2,18 @@ import { Link, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAdmin } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
+import { getUserPrimaryRole } from "~/utils/auth.server";
 import { Plus, Edit, Trash2, Shield, User } from "lucide-react";
+import type { User as PrismaUser } from "@prisma/client";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   
   const users = await prisma.user.findMany({
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      username: true,
-      name: true,
-      department: true,
-      role: true,
-      createdAt: true,
-      _count: {
-        select: {
-          attendances: true,
-        },
-      },
+    include: {
+      roles: true,
     },
+    orderBy: { createdAt: "desc" },
   });
 
   return { users };
@@ -36,16 +28,12 @@ export default function AdminUsers() {
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">User Management</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Manage worker and admin accounts
+            View user accounts - Contact superadmin for user management
           </p>
         </div>
-        <Link
-          to="/admin/users/new"
-          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Add User
-        </Link>
+        <div className="text-sm text-gray-500 italic">
+          Read-Only Access
+        </div>
       </div>
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
@@ -56,7 +44,7 @@ export default function AdminUsers() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
                     <div className="flex-shrink-0">
-                      {user.role === "ADMIN" ? (
+                      {user.roles?.some((role: { name: string }) => role.name === "ADMIN" || role.name === "SUPERADMIN") ? (
                         <Shield className="h-10 w-10 text-purple-500" />
                       ) : (
                         <User className="h-10 w-10 text-gray-400" />
@@ -67,37 +55,34 @@ export default function AdminUsers() {
                         {user.name}
                       </div>
                       <div className="text-sm text-gray-500">
-                        @{user.username} • {user.department}
+                        @{user.username} • {getUserPrimaryRole(user as PrismaUser & { roles: { name: string }[] })}
                       </div>
-                      <div className="mt-1 flex items-center text-xs text-gray-500">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                          user.role === "ADMIN" 
-                            ? "bg-purple-100 text-purple-800" 
-                            : "bg-green-100 text-green-800"
-                        }`}>
-                          {user.role}
-                        </span>
-                        <span className="ml-2">
-                          • {user._count.attendances} attendance records
-                        </span>
+                      <div className="mt-1 flex items-center text-xs text-gray-500 space-x-1">
+                        {user.roles?.map((role: { id: string; name: string }) => {
+                          const roleColor = role.name === "SUPERADMIN"
+                            ? "bg-red-100 text-red-800"
+                            : role.name === "ADMIN"
+                            ? "bg-purple-100 text-purple-800"
+                            : "bg-green-100 text-green-800";
+                          
+                          return (
+                            <span key={role.id} className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${roleColor}`}>
+                              {role.name}
+                            </span>
+                          );
+                        }) || (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                            WORKER
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      className="text-indigo-600 hover:text-indigo-900"
-                      title="Edit user"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="text-red-600 hover:text-red-900"
-                      title="Delete user"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {/* Admin accounts can only view user information - no edit/delete permissions */}
+                    <span className="text-xs text-gray-500 italic">
+                      View Only - Contact Superadmin for Changes
+                    </span>
                   </div>
                 </div>
               </div>
@@ -109,19 +94,10 @@ export default function AdminUsers() {
       {users.length === 0 && (
         <div className="text-center py-12">
           <User className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No users</h3>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">No users found</h3>
           <p className="mt-1 text-sm text-gray-500">
-            Get started by creating a new user.
+            Contact superadmin to create user accounts.
           </p>
-          <div className="mt-6">
-            <Link
-              to="/admin/users/new"
-              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add User
-            </Link>
-          </div>
         </div>
       )}
     </div>

@@ -29,8 +29,8 @@ export async function loader({ params }: LoaderFunctionArgs) {
     throw new Response("Attendance record not found", { status: 404 });
   }
 
-  // Get the photo data
-  const photoData = type === "checkin" ? attendance.checkInPhoto : attendance.checkOutPhoto;
+  // Get the photo data - using correct field names from schema
+  const photoData = type === "checkin" ? attendance.photoIn : attendance.photoOut;
 
   if (!photoData) {
     throw new Response("Photo not found", { status: 404 });
@@ -53,7 +53,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
         "Access-Control-Allow-Origin": "*", // Allow cross-origin access for Excel
         "Access-Control-Allow-Methods": "GET",
         "Access-Control-Allow-Headers": "Content-Type",
-        "Content-Disposition": `inline; filename="${attendance.user.name}-${type}-${attendance.date.toISOString().split('T')[0]}.${mimeType.split('/')[1]}"`,
+        "Content-Disposition": `inline; filename="${attendance.user.name}-${type}-${attendance.date}.${mimeType.split('/')[1]}"`,
       },
     });
   }

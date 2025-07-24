@@ -7,20 +7,89 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// The User model represents system users with RBAC support
 model User {
-  id          String       @id @default(cuid())
-  email       String       @unique
-  username    String?      @unique
-  password    String
-  name        String
-  role        String       @default("user")
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  attendances Attendance[]
+  id                String             @id @default(cuid())
+  username          String             @unique
+  name              String
+  department        String?            // Department for admin-level access control
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  password          Password?
+  sessions          Session[]
+  roles             Role[]
+  attendances       Attendance[]
+  createdAttendances Attendance[]      @relation("AttendanceCreatedBy")
 
   @@map("users")
 }
 
+// The Password model stores the hashed password for each user account.
+// This is separated from User for security best practices.
+model Password {
+  hash      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  userId String @unique
+
+  @@map("passwords")
+}
+
+// The Permission model defines individual permissions that can be assigned to roles.
+// Permissions represent specific actions users can perform in the system.
+model Permission {
+  id          String @id @default(cuid())
+  action      String // e.g., create, read, update, delete
+  entity      String // e.g., users, attendance, reports, settings
+  access      String // e.g., own, department, all
+  description String @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roles Role[]
+
+  @@unique([action, entity, access])
+  @@map("permissions")
+}
+
+// The Role model represents a collection of permissions that can be assigned to users.
+// Roles help manage access control by grouping related permissions.
+model Role {
+  id          String @id @default(cuid())
+  name        String @unique
+  displayName String
+  description String @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users       User[]
+  permissions Permission[]
+
+  @@map("roles")
+}
+
+// The Session model manages user authentication sessions.
+// It tracks when a user's login session expires for security purposes.
+model Session {
+  id             String   @id @default(cuid())
+  expirationDate DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  userId String
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// Enhanced Attendance model with RBAC support
 model Attendance {
   id          String    @id @default(cuid())
   userId      String
@@ -34,17 +103,10 @@ model Attendance {
   locationOut String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  createdBy   String?   // Track who created/modified the record
+  
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator     User?     @relation("AttendanceCreatedBy", fields: [createdBy], references: [id])
 
   @@map("attendances")
-}
-
-model superadmins {
-  id                   String   @id @default(cuid())
-  email                String   @unique
-  password             String
-  name                 String
-  superadminVerifyCode String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
 }

@@ -1,4 +1,13 @@
-import type { Config, Context } from "@netlify/functions"
+// Type declarations for Netlify functions
+interface Config {
+	path: string;
+	preferStatic?: boolean;
+}
+
+interface Context {
+	[key: string]: any;
+}
+
 import { createRequestHandler } from "react-router"
 
 declare module "react-router" {

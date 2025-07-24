@@ -8,12 +8,40 @@ import { User, Shield, Key, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const user = await requireSuperAdmin(request);
+  const baseUser = await requireSuperAdmin(request);
+  
+  // Get user with password relation
+  const user = await prisma.user.findUnique({
+    where: { id: baseUser.id },
+    include: {
+      password: true,
+      roles: true,
+    },
+  });
+  
+  if (!user) {
+    throw new Error("User not found");
+  }
+  
   return { user };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const user = await requireSuperAdmin(request);
+  const baseUser = await requireSuperAdmin(request);
+  
+  // Get user with password relation
+  const user = await prisma.user.findUnique({
+    where: { id: baseUser.id },
+    include: {
+      password: true,
+      roles: true,
+    },
+  });
+  
+  if (!user || !user.password) {
+    throw new Error("User or password not found");
+  }
+  
   const formData = await request.formData();
   const action = formData.get("action");
 
@@ -24,7 +52,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const confirmPassword = formData.get("confirmPassword") as string;
 
     // Verify current password
-    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password.hash);
     if (!isCurrentPasswordValid) {
       return {
         error: "Current password is incorrect",
@@ -33,7 +61,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Verify verification code
-    if (!user.superadminVerifyCode || verificationCode !== user.superadminVerifyCode) {
+    if (!(user as any).superadminVerifyCode || verificationCode !== (user as any).superadminVerifyCode) {
       return {
         error: "Verification code is incorrect or not set",
         success: null,
@@ -58,7 +86,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Update password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await prisma.user.update({
+    await (prisma as any).superadmins.update({
       where: { id: user.id },
       data: { password: hashedPassword },
     });
@@ -75,7 +103,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const newVerificationCode = formData.get("newVerificationCode") as string;
 
     // Verify current password
-    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password.hash);
     if (!isCurrentPasswordValid) {
       return {
         error: "Current password is incorrect",
@@ -84,7 +112,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Verify current verification code
-    if (!user.superadminVerifyCode || currentVerificationCode !== user.superadminVerifyCode) {
+    if (!(user as any).superadminVerifyCode || currentVerificationCode !== (user as any).superadminVerifyCode) {
       return {
         error: "Current verification code is incorrect or not set",
         success: null,
@@ -100,7 +128,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Update verification code
-    await prisma.user.update({
+    await (prisma as any).superadmins.update({
       where: { id: user.id },
       data: { superadminVerifyCode: newVerificationCode },
     });
@@ -145,11 +173,11 @@ export default function SuperAdminProfile() {
             </div>
             <div>
               <dt className="text-sm font-medium text-gray-500">Username</dt>
-              <dd className="mt-1 text-sm text-gray-900">@{user.username}</dd>
+              <dd className="mt-1 text-sm text-gray-900">@{(user as any).username}</dd>
             </div>
             <div>
               <dt className="text-sm font-medium text-gray-500">Department</dt>
-              <dd className="mt-1 text-sm text-gray-900">{user.department}</dd>
+              <dd className="mt-1 text-sm text-gray-900">{(user as any).department || "Super Admin"}</dd>
             </div>
             <div>
               <dt className="text-sm font-medium text-gray-500">Role</dt>

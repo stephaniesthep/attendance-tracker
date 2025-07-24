@@ -1,11 +1,18 @@
 import { useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
+import { getUserWithPermissions } from "~/utils/rbac.server";
+import { getUserPrimaryRole } from "~/utils/auth.server";
 import { User, Building, Shield } from "lucide-react";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
-  return { user };
+  // Get user with roles for profile display
+  const userWithRoles = await getUserWithPermissions(user.id);
+  if (!userWithRoles) {
+    throw new Error("User not found");
+  }
+  return { user: userWithRoles };
 }
 
 export default function Profile() {
@@ -64,13 +71,23 @@ export default function Profile() {
                 Role
               </dt>
               <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  user.role === "ADMIN" 
-                    ? "bg-purple-100 text-purple-800" 
-                    : "bg-green-100 text-green-800"
-                }`}>
-                  {user.role}
-                </span>
+                {user.roles?.map((role: { id: string; name: string }) => {
+                  const roleColor = role.name === "SUPERADMIN"
+                    ? "bg-red-100 text-red-800"
+                    : role.name === "ADMIN"
+                    ? "bg-purple-100 text-purple-800"
+                    : "bg-green-100 text-green-800";
+                  
+                  return (
+                    <span key={role.id} className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mr-2 ${roleColor}`}>
+                      {role.name}
+                    </span>
+                  );
+                }) || (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    WORKER
+                  </span>
+                )}
               </dd>
             </div>
             <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">

@@ -1,17 +1,19 @@
-import type { Route } from "./+types/home";
+import type { LoaderFunctionArgs, MetaFunction } from "react-router";
+import { useLoaderData } from "react-router";
 import { Welcome } from "../welcome/welcome";
 
-export function meta({}: Route.MetaArgs) {
+export const meta: MetaFunction = () => {
   return [
     { title: "New React Router App" },
     { name: "description", content: "Welcome to React Router!" },
   ];
+};
+
+export function loader({ context }: LoaderFunctionArgs) {
+  return { message: (context as any)?.VALUE_FROM_EXPRESS || "Welcome!" };
 }
 
-export function loader({ context }: Route.LoaderArgs) {
-  return { message: context.VALUE_FROM_EXPRESS };
-}
-
-export default function Home({ loaderData }: Route.ComponentProps) {
-  return <Welcome message={loaderData.message} />;
+export default function Home() {
+  const { message } = useLoaderData<typeof loader>();
+  return <Welcome message={message} />;
 }

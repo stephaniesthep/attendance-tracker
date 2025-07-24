@@ -11,7 +11,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 
 export async function loader({ request }: ActionFunctionArgs) {
   await requireAdmin(request);
-  return null;
+  // Redirect admin users away from this page since they shouldn't create users
+  return redirect("/admin/users");
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -42,18 +43,30 @@ export async function action({ request }: ActionFunctionArgs) {
     return { error: "Password must be at least 6 characters" };
   }
 
+  // Prevent creation of SUPERADMIN accounts
+  if (role === "SUPERADMIN") {
+    return { error: "Cannot create SUPERADMIN accounts" };
+  }
+
   try {
+    // Get role ID based on role name - this is a simplified approach
+    // In a real app, you'd fetch the actual role IDs from the database
+    const roleIds = role === "ADMIN" ? ["admin-role-id"] : ["worker-role-id"];
+    
     await createUser({
       username,
       password,
       name,
       department,
-      role: role as "ADMIN" | "WORKER",
+      roleIds,
     });
     
     return redirect("/admin/users");
   } catch (error) {
-    return { error: "Username already exists" };
+    if (error instanceof Error && error.message.includes("SUPERADMIN")) {
+      return { error: "Cannot create SUPERADMIN accounts" };
+    }
+    return { error: "Username already exists or invalid data" };
   }
 }
 

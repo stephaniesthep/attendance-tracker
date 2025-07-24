@@ -2,31 +2,32 @@ import type { ActionFunctionArgs } from "react-router";
 import { redirect } from "react-router";
 import { requireUser } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
-import { startOfDay, endOfDay, differenceInMinutes } from "date-fns";
+import { differenceInMinutes, format } from "date-fns";
 import { locationService } from "~/utils/location.server";
 
 export async function action({ request }: ActionFunctionArgs) {
-  const user = await requireUser(request);
-  const formData = await request.formData();
-  
-  const photo = formData.get("photo");
-  const location = formData.get("location");
-  const locationName = formData.get("locationName");
-
-  if (typeof photo !== "string" || typeof location !== "string") {
-    throw new Response("Invalid data", { status: 400 });
-  }
-
-  // Parse and validate location coordinates
-  let coordinates;
   try {
-    coordinates = JSON.parse(location);
-    if (!coordinates.lat || !coordinates.lng) {
-      throw new Error("Invalid coordinates");
+    const user = await requireUser(request);
+    const formData = await request.formData();
+    
+    const photo = formData.get("photo");
+    const location = formData.get("location");
+    const locationName = formData.get("locationName");
+
+    if (typeof photo !== "string" || typeof location !== "string") {
+      return Response.json({ error: "Invalid data provided" }, { status: 400 });
     }
-  } catch (error) {
-    throw new Response("Invalid location data", { status: 400 });
-  }
+
+    // Parse and validate location coordinates
+    let coordinates;
+    try {
+      coordinates = JSON.parse(location);
+      if (!coordinates.lat || !coordinates.lng) {
+        throw new Error("Invalid coordinates");
+      }
+    } catch (error) {
+      return Response.json({ error: "Invalid location data" }, { status: 400 });
+    }
 
   // Get enhanced location information with quality scoring
   let locationResult;
@@ -53,46 +54,43 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const today = new Date();
+  const todayString = format(today, 'yyyy-MM-dd'); // Use same format as loader
   
   // Find today's attendance record
   const attendance = await prisma.attendance.findFirst({
     where: {
       userId: user.id,
-      date: {
-        gte: startOfDay(today),
-        lte: endOfDay(today),
+      date: todayString,
+      checkOut: null,
+    },
+  });
+
+    if (!attendance) {
+      return Response.json({ error: "No check-in found for today. Please check in first." }, { status: 400 });
+    }
+
+    // Calculate duration if checkIn exists
+    let duration = 0;
+    if (attendance.checkIn) {
+      duration = differenceInMinutes(today, attendance.checkIn);
+    }
+
+    // Update attendance record using correct field names from schema
+    await prisma.attendance.update({
+      where: {
+        id: attendance.id,
       },
-      checkOutTime: null,
-    },
-  });
+      data: {
+        checkOut: today,
+        photoOut: photo,
+        locationOut: location,
+      },
+    });
 
-  if (!attendance) {
-    throw new Response("No check-in found for today", { status: 400 });
+    return redirect("/attendance");
+  } catch (error) {
+    console.error("Check-out error:", error);
+    // For any other error, return a JSON error response
+    return Response.json({ error: "An unexpected error occurred during check-out. Please try again." }, { status: 500 });
   }
-
-  // Calculate duration
-  const duration = differenceInMinutes(today, attendance.checkInTime);
-
-  // Update attendance record with enhanced location data
-  await (prisma.attendance as any).update({
-    where: {
-      id: attendance.id,
-    },
-    data: {
-      checkOutTime: today,
-      checkOutPhoto: photo,
-      checkOutLocation: location,
-      checkOutLocationName: finalLocationName,
-      checkOutLocationSource: locationSource,
-      checkOutLocationConfidence: locationConfidence,
-      checkOutQualityScore: qualityScore,
-      checkOutLocationType: locationType,
-      checkOutLocationComponents: locationResult?.components ? JSON.stringify(locationResult.components) : null,
-      checkOutGpsAccuracy: coordinates.accuracy || null,
-      checkOutResponseTime: locationResult?.responseTime || null,
-      duration,
-    },
-  });
-
-  return redirect("/attendance");
 }
