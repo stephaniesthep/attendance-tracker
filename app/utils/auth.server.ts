@@ -195,30 +195,6 @@ export async function deleteUser(userId: string): Promise<void> {
   });
 }
 
-/**
- * Get user's primary role (highest priority role)
- */
-export function getUserPrimaryRole(user: User & { roles: { name: string }[] }): string {
-  if (!user.roles || user.roles.length === 0) return "WORKER";
-  
-  // Role priority: SUPERADMIN > ADMIN > WORKER
-  const roleOrder = { SUPERADMIN: 0, ADMIN: 1, WORKER: 2 };
-  
-  const sortedRoles = user.roles.sort((a, b) => {
-    const aOrder = roleOrder[a.name as keyof typeof roleOrder] ?? 3;
-    const bOrder = roleOrder[b.name as keyof typeof roleOrder] ?? 3;
-    return aOrder - bOrder;
-  });
-  
-  return sortedRoles[0]?.name || "WORKER";
-}
-
-/**
- * Check if user has a specific role
- */
-export function userHasRole(user: User & { roles: { name: string }[] }, roleName: string): boolean {
-  return user.roles?.some(role => role.name === roleName) || false;
-}
 
 /**
  * Get all available roles
@@ -231,6 +207,9 @@ export async function getAllRoles() {
     orderBy: { name: "asc" }
   });
 }
+
+// Re-export client-safe functions for server-side usage
+export { getUserPrimaryRole, userHasRole } from "./auth";
 
 /**
  * Get role by name

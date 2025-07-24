@@ -3,6 +3,7 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { redirect } from "react-router";
 import { prisma } from "~/utils/db.server";
 import { createUser, updateUser, deleteUser, getAllRoles } from "~/utils/auth.server";
+import { getUserPrimaryRole } from "~/utils/auth";
 import { superAdminOnly } from "~/utils/middleware.server";
 import { Users, Plus, Edit, Trash2, Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
@@ -97,20 +98,6 @@ export default function SuperAdminUsers() {
     }));
   };
 
-  const getUserPrimaryRole = (user: { roles: { name: string }[] }) => {
-    if (!user.roles || user.roles.length === 0) return "WORKER";
-    
-    // Role priority: SUPERADMIN > ADMIN > WORKER
-    const roleOrder = { SUPERADMIN: 0, ADMIN: 1, WORKER: 2 };
-    
-    const sortedRoles = user.roles.sort((a: { name: string }, b: { name: string }) => {
-      const aOrder = roleOrder[a.name as keyof typeof roleOrder] ?? 3;
-      const bOrder = roleOrder[b.name as keyof typeof roleOrder] ?? 3;
-      return aOrder - bOrder;
-    });
-    
-    return sortedRoles[0]?.name || "WORKER";
-  };
 
   const getRoleColor = (roleName: string) => {
     switch (roleName) {

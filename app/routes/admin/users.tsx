@@ -2,7 +2,7 @@ import { Link, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAdmin } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
-import { getUserPrimaryRole } from "~/utils/auth.server";
+import { getUserPrimaryRole } from "~/utils/auth";
 import { Plus, Edit, Trash2, Shield, User } from "lucide-react";
 import type { User as PrismaUser } from "@prisma/client";
 

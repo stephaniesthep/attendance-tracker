@@ -2,7 +2,7 @@ import { Outlet, Link, useLoaderData, Form } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
 import { getUserWithPermissions } from "~/utils/rbac.server";
-import { userHasRole } from "~/utils/auth.server";
+import { userHasRole } from "~/utils/auth";
 import { LogOut, Home, Camera, Users, User, Shield } from "lucide-react";
 
 export async function loader({ request }: LoaderFunctionArgs) {

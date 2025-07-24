@@ -1,7 +1,7 @@
 import { useLoaderData, useRevalidator } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
-import { getUserPrimaryRole } from "~/utils/auth.server";
+import { getUserPrimaryRole } from "~/utils/auth";
 import { prisma } from "~/utils/db.server";
 import { format } from "date-fns";
 import { Clock, Calendar, CheckCircle, XCircle } from "lucide-react";

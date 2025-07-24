@@ -2,7 +2,7 @@ import { useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
 import { getUserWithPermissions } from "~/utils/rbac.server";
-import { getUserPrimaryRole } from "~/utils/auth.server";
+import { getUserPrimaryRole } from "~/utils/auth";
 import { User, Building, Shield } from "lucide-react";
 
 export async function loader({ request }: LoaderFunctionArgs) {
