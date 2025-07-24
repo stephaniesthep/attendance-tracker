@@ -1,36 +1,14 @@
 [build]
-  command = "npm run db:generate:prod && npm run build"
-  publish = "build/client"
-  functions = "netlify/functions"
+command = "npm run build"
+publish = "build/client"
 
-[build.environment]
-  NODE_VERSION = "20"
-  DATABASE_PROVIDER = "postgresql"
+[dev]
+command = "npm run dev"
+framework = "vite"
 
-# Environment variables for production
-[context.production.environment]
-  DATABASE_PROVIDER = "postgresql"
-  NODE_ENV = "production"
+# Set immutable caching for static files, because they have fingerprinted filenames
 
-# Environment variables for branch deploys
-[context.branch-deploy.environment]
-  DATABASE_PROVIDER = "postgresql"
-  NODE_ENV = "production"
-
-# Environment variables for deploy previews
-[context.deploy-preview.environment]
-  DATABASE_PROVIDER = "postgresql"
-  NODE_ENV = "production"
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/server/:splat"
-  status = 200
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-
-[functions]
-  node_bundler = "esbuild"
+[[headers]]
+for = "/assets/*"
+[headers.values]
+"Cache-Control" = "public, max-age=31560000, immutable"
