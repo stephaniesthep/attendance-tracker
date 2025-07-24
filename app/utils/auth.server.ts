@@ -26,9 +26,19 @@ export function verifyToken(token: string): { userId: string } | null {
 }
 
 export async function authenticateUser(username: string, password: string): Promise<{ user: User; token: string } | null> {
-  const user = await prisma.user.findUnique({
-    where: { email: username },
-  });
+  // Use raw query to find user by username since TypeScript client doesn't recognize the field yet
+  const users = await prisma.$queryRaw<User[]>`
+    SELECT * FROM users WHERE username = ${username} LIMIT 1
+  `;
+
+  let user = users.length > 0 ? users[0] : null;
+
+  // If not found by username, try by email (for backward compatibility)
+  if (!user) {
+    user = await prisma.user.findUnique({
+      where: { email: username },
+    });
+  }
 
   if (!user) {
     return null;

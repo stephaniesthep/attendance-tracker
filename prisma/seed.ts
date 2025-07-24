@@ -1,4 +1,5 @@
-import { PrismaClient, User } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
+import type { User } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -6,89 +7,90 @@ const prisma = new PrismaClient();
 async function seed() {
   console.log("🌱 Seeding database...");
 
-  // Create superadmin user
+  // Create superadmin in the superadmins table (separate from users)
   const superadminPassword = await bcrypt.hash("superadmin123", 10);
-  const superadmin = await prisma.user.create({
-    data: {
-      username: "superadmin",
-      password: superadminPassword,
-      name: "Super Administrator",
-      department: "System",
-      role: "SUPERADMIN",
-      superadminVerifyCode: "12031999", // Pre-set verification code
-    },
+  
+  // Check if superadmin already exists
+  const existingSuperadmin = await prisma.superadmins.findUnique({
+    where: { email: "superadmin@company.com" }
   });
 
-  console.log(`✅ Created superadmin user: ${superadmin.username}`);
-
-  // Create admin users
-  const adminPassword = await bcrypt.hash("admin123", 10);
-  
-  const admins = await Promise.all([
-    prisma.user.create({
+  if (!existingSuperadmin) {
+    const superadmin = await prisma.superadmins.create({
       data: {
-        username: "admin1",
-        password: adminPassword,
-        name: "John Admin",
-        department: "Management",
-        role: "ADMIN",
-      },
-    }),
-    prisma.user.create({
-      data: {
-        username: "admin2",
-        password: adminPassword,
-        name: "Sarah Admin",
-        department: "HR",
-        role: "ADMIN",
-      },
-    }),
-    prisma.user.create({
-      data: {
-        username: "admin3",
-        password: adminPassword,
-        name: "Mike Admin",
-        department: "Operations",
-        role: "ADMIN",
-      },
-    }),
-    prisma.user.create({
-      data: {
-        username: "admin4",
-        password: adminPassword,
-        name: "Lisa Admin",
-        department: "Finance",
-        role: "ADMIN",
-      },
-    }),
-  ]);
-
-  console.log(`✅ Created ${admins.length} admin users`);
-
-  // Create worker users
-  const workerPassword = await bcrypt.hash("worker123", 10);
-  const departments = ["Engineering", "Sales", "Marketing", "Finance", "Support"];
-  
-  const workers: User[] = [];
-  for (let i = 1; i <= 20; i++) {
-    const worker = await prisma.user.create({
-      data: {
-        username: `worker${i}`,
-        password: workerPassword,
-        name: `Worker ${i}`,
-        department: departments[Math.floor(Math.random() * departments.length)],
-        role: "WORKER",
+        email: "superadmin@company.com",
+        password: superadminPassword,
+        name: "Super Administrator",
+        superadminVerifyCode: "12031999",
       },
     });
-    workers.push(worker);
+    console.log(`✅ Created superadmin: ${superadmin.email}`);
+  } else {
+    console.log(`ℹ️ Superadmin already exists: ${existingSuperadmin.email}`);
   }
 
-  console.log(`✅ Created ${workers.length} worker users`);
+  // Create admin users in the users table
+  const adminPassword = await bcrypt.hash("admin123", 10);
+  
+  const adminData = [
+    { email: "admin1@company.com", username: "admin1", name: "John Admin" },
+    { email: "admin2@company.com", username: "admin2", name: "Sarah Admin" },
+    { email: "admin3@company.com", username: "admin3", name: "Mike Admin" },
+    { email: "admin4@company.com", username: "admin4", name: "Lisa Admin" },
+  ];
+
+  const admins = [];
+  for (const admin of adminData) {
+    const existingAdmin = await prisma.user.findUnique({
+      where: { email: admin.email }
+    });
+
+    if (!existingAdmin) {
+      const newAdmin = await prisma.user.create({
+        data: {
+          email: admin.email,
+          username: admin.username,
+          password: adminPassword,
+          name: admin.name,
+          role: "ADMIN",
+        },
+      });
+      admins.push(newAdmin);
+      console.log(`✅ Created admin: ${newAdmin.username} (${newAdmin.email})`);
+    } else {
+      console.log(`ℹ️ Admin already exists: ${existingAdmin.username || existingAdmin.email}`);
+    }
+  }
+
+  // Create regular users
+  const userPassword = await bcrypt.hash("user123", 10);
+  
+  const users: User[] = [];
+  for (let i = 1; i <= 10; i++) {
+    const email = `user${i}@company.com`;
+    const existingUser = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (!existingUser) {
+      const user = await prisma.user.create({
+        data: {
+          email,
+          password: userPassword,
+          name: `User ${i}`,
+          role: "user",
+        },
+      });
+      users.push(user);
+    }
+  }
+
+  console.log(`✅ Created ${users.length} regular users`);
 
   console.log("\n📋 Test Credentials:");
-  console.log("Superadmin login: superadmin / superadmin123");
-  console.log("Admin login: admin1 / admin123");
-  console.log("Worker login: worker1 / worker123");
+  console.log("Superadmin login: superadmin@company.com / superadmin123");
+  console.log("Admin login: admin1@company.com / admin123");
+  console.log("User login: user1@company.com / user123");
   console.log("\nSuperadmin verification code: 12031999");
   console.log("\n✨ Seed completed!");
 }
