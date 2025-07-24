@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "./node_modules/.bin/react-router build",
+    "build": "npx @react-router/dev build",
     "dev": "cross-env NODE_ENV=development node server.js",
     "start": "node server.js",
     "typecheck:gen": "react-router typegen",
@@ -28,6 +28,7 @@
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-slot": "^1.2.3",
+    "@react-router/dev": "^7.7.0",
     "@react-router/express": "^7.7.0",
     "@react-router/node": "^7.7.0",
     "@tanstack/react-router": "^1.129.0",
@@ -54,7 +55,6 @@
     "serverless-http": "^3.2.0"
   },
   "devDependencies": {
-    "@react-router/dev": "^7.7.0",
     "@tailwindcss/vite": "^4.1.11",
     "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.7.5",
