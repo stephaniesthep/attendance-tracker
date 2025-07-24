@@ -17,8 +17,7 @@
 		"db:push:prod": "prisma db push --schema=prisma/schema.production.prisma",
 		"db:migrate": "prisma migrate deploy",
 		"db:migrate:prod": "prisma migrate deploy --schema=prisma/schema.production.prisma",
-		"postinstall": "prisma generate",
-		"netlify:build": "npm run db:generate:prod && npm run build"
+		"postinstall": "prisma generate"
 	},
 	"prisma": {
 		"seed": "tsx prisma/seed.ts"
