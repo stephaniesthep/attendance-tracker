@@ -32,20 +32,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Get today's attendance count
   const todayAttendance = await prisma.attendance.count({
     where: {
-      date: {
-        gte: startOfDay(today),
-        lte: endOfDay(today),
-      },
+      date: format(today, 'yyyy-MM-dd'),
     },
   });
   
   // Get yesterday's attendance count for comparison
   const yesterdayAttendance = await prisma.attendance.count({
     where: {
-      date: {
-        gte: startOfDay(yesterday),
-        lte: endOfDay(yesterday),
-      },
+      date: format(yesterday, 'yyyy-MM-dd'),
     },
   });
   
@@ -53,13 +47,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const recentAttendance = await prisma.attendance.findMany({
     take: 5,
     orderBy: {
-      checkInTime: 'desc',
+      checkIn: 'desc',
     },
     include: {
       user: {
         select: {
           name: true,
-          department: true,
+          role: true,
         },
       },
     },
@@ -228,13 +222,13 @@ export default function SuperAdminDashboard() {
                         {attendance.user.name}
                       </div>
                       <div className="text-sm text-gray-500">
-                        {attendance.user.department}
+                        {attendance.user.role}
                       </div>
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="text-sm text-gray-900">
-                      {format(new Date(attendance.checkInTime), 'HH:mm:ss')}
+                      {attendance.checkIn ? format(new Date(attendance.checkIn), 'HH:mm:ss') : 'No check-in'}
                     </div>
                     <div className="text-sm text-gray-500">
                       {format(new Date(attendance.date), 'MMM dd, yyyy')}
