@@ -10,7 +10,7 @@
 		"typecheck:check": "pnpm --package=typescript dlx tsc --build --pretty --watch",
 		"typecheck": "pnpm typecheck:gen && pnpm typecheck:check",
 		"db:seed": "tsx prisma/seed.ts",
-		"db:seed:prod": "tsx scripts/seed-production.js",
+		"db:seed:prod": "tsx scripts/seed-production-updated.js",
 		"db:generate": "prisma generate",
 		"db:generate:prod": "prisma generate --schema=prisma/schema.production.prisma",
 		"db:push": "prisma db push",

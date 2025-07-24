@@ -6,63 +6,49 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
   id                    String   @id @default(cuid())
-  username              String   @unique
+  email                 String   @unique
   password              String
   name                  String
-  department            String
-  role                  Role     @default(WORKER)
-  superadminVerifyCode  String?  // Verification code for superadmin password changes
+  role                  String   @default("user")
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
   
   attendances Attendance[]
+
+  @@map("users")
 }
 
 model Attendance {
-  id                        String    @id @default(cuid())
-  userId                    String
-  date                      DateTime  @default(now())
-  checkInTime               DateTime
-  checkInPhoto              String    // Base64 or file path
-  checkInLocation           String    // JSON string with lat/lng
-  checkInLocationName       String?   // Human readable location name
-  checkInLocationSource     String?   // Source of location data (nominatim, google, fallback)
-  checkInLocationConfidence String?   // Confidence level (high, medium, low)
-  checkInQualityScore       Int?      // Location quality score (0-100)
-  checkInLocationType       String?   // Location type (residential, commercial, etc.)
-  checkInLocationComponents String?   // JSON string with detailed address components
-  checkInGpsAccuracy        Float?    // GPS accuracy in meters
-  checkInResponseTime       Int?      // Provider response time in ms
-  checkOutTime              DateTime?
-  checkOutPhoto             String?   // Base64 or file path
-  checkOutLocation          String?   // JSON string with lat/lng
-  checkOutLocationName      String?   // Human readable location name
-  checkOutLocationSource    String?   // Source of location data (nominatim, google, fallback)
-  checkOutLocationConfidence String?  // Confidence level (high, medium, low)
-  checkOutQualityScore      Int?      // Location quality score (0-100)
-  checkOutLocationType      String?   // Location type (residential, commercial, etc.)
-  checkOutLocationComponents String?  // JSON string with detailed address components
-  checkOutGpsAccuracy       Float?    // GPS accuracy in meters
-  checkOutResponseTime      Int?      // Provider response time in ms
-  duration                  Int?      // Duration in minutes
-  createdAt                 DateTime  @default(now())
+  id          String    @id @default(cuid())
+  userId      String
+  checkIn     DateTime?
+  checkOut    DateTime?
+  date        String
+  status      String    @default("present")
+  photoIn     String?
+  photoOut    String?
+  locationIn  String?
+  locationOut String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   
-  user User @relation(fields: [userId], references: [id])
-  
-  @@index([userId, date])
-  @@index([checkInQualityScore])
-  @@index([checkOutQualityScore])
-  @@index([checkInLocationType, checkOutLocationType])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("attendances")
 }
 
-enum Role {
-  SUPERADMIN
-  ADMIN
-  WORKER
+model superadmins {
+  id                   String   @id @default(cuid())
+  email                String   @unique
+  password             String
+  name                 String
+  superadminVerifyCode String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }

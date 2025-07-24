@@ -24,10 +24,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const todayAttendance = await prisma.attendance.findFirst({
     where: {
       userId: user.id,
-      date: {
-        gte: startOfDay(today),
-        lte: endOfDay(today),
-      },
+      date: format(today, "yyyy-MM-dd"),
     },
   });
 
@@ -36,7 +33,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       userId: user.id,
     },
     orderBy: {
-      date: "desc",
+      createdAt: "desc",
     },
     take: 5,
   });
@@ -94,7 +91,7 @@ export default function Dashboard() {
                   </dt>
                   <dd className="text-lg font-medium text-gray-900">
                     {todayAttendance
-                      ? todayAttendance.checkOutTime
+                      ? todayAttendance.checkOut
                         ? "Completed"
                         : "Checked In"
                       : "Not Checked In"}
@@ -117,8 +114,8 @@ export default function Dashboard() {
                     Check-in Time
                   </dt>
                   <dd className="text-lg font-medium text-gray-900">
-                    {todayAttendance
-                      ? format(new Date(todayAttendance.checkInTime), "h:mm a")
+                    {todayAttendance && todayAttendance.checkIn
+                      ? format(new Date(todayAttendance.checkIn), "h:mm a")
                       : "-"}
                   </dd>
                 </dl>
@@ -145,7 +142,7 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
                     <div className="flex-shrink-0">
-                      {attendance.checkOutTime ? (
+                      {attendance.checkOut ? (
                         <CheckCircle className="h-5 w-5 text-green-400" />
                       ) : (
                         <Clock className="h-5 w-5 text-yellow-400" />
@@ -153,21 +150,18 @@ export default function Dashboard() {
                     </div>
                     <div className="ml-4">
                       <div className="text-sm font-medium text-gray-900">
-                        {format(new Date(attendance.date), "MMMM d, yyyy")}
+                        {attendance.date}
                       </div>
                       <div className="text-sm text-gray-500">
-                        Check-in: {format(new Date(attendance.checkInTime), "h:mm a")}
-                        {attendance.checkOutTime && (
-                          <> | Check-out: {format(new Date(attendance.checkOutTime), "h:mm a")}</>
+                        {attendance.checkIn && (
+                          <>Check-in: {format(new Date(attendance.checkIn), "h:mm a")}</>
+                        )}
+                        {attendance.checkOut && (
+                          <> | Check-out: {format(new Date(attendance.checkOut), "h:mm a")}</>
                         )}
                       </div>
                     </div>
                   </div>
-                  {attendance.duration && (
-                    <div className="text-sm text-gray-500">
-                      {Math.floor(attendance.duration / 60)}h {attendance.duration % 60}m
-                    </div>
-                  )}
                 </div>
               </li>
             ))

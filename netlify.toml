@@ -3,7 +3,7 @@ command = "npm ci && npm run build"
 publish = "build/client"
 
 [build.environment]
-NODE_ENV = "development"
+NODE_ENV = "production"
 NPM_FLAGS = "--include=dev"
 
 [dev]

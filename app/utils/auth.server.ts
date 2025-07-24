@@ -25,9 +25,9 @@ export function verifyToken(token: string): { userId: string } | null {
   }
 }
 
-export async function authenticateUser(username: string, password: string): Promise<{ user: User; token: string } | null> {
+export async function authenticateUser(email: string, password: string): Promise<{ user: User; token: string } | null> {
   const user = await prisma.user.findUnique({
-    where: { username },
+    where: { email },
   });
 
   if (!user) {
@@ -55,11 +55,10 @@ export async function getUserFromToken(token: string): Promise<User | null> {
 }
 
 export async function createUser(data: {
-  username: string;
+  email: string;
   password: string;
   name: string;
-  department: string;
-  role?: "ADMIN" | "WORKER";
+  role?: string;
 }): Promise<User> {
   const hashedPassword = await hashPassword(data.password);
   
@@ -67,7 +66,7 @@ export async function createUser(data: {
     data: {
       ...data,
       password: hashedPassword,
-      role: data.role || "WORKER",
+      role: data.role || "user",
     },
   });
 }
