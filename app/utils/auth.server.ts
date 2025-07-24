@@ -25,9 +25,9 @@ export function verifyToken(token: string): { userId: string } | null {
   }
 }
 
-export async function authenticateUser(email: string, password: string): Promise<{ user: User; token: string } | null> {
+export async function authenticateUser(username: string, password: string): Promise<{ user: User; token: string } | null> {
   const user = await prisma.user.findUnique({
-    where: { email },
+    where: { email: username },
   });
 
   if (!user) {

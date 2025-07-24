@@ -6,16 +6,16 @@ import { createUserSession } from "~/utils/session.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
-  const email = formData.get("email");
+  const username = formData.get("username");
   const password = formData.get("password");
 
-  if (typeof email !== "string" || typeof password !== "string") {
+  if (typeof username !== "string" || typeof password !== "string") {
     return { error: "Invalid form data" };
   }
 
-  const result = await authenticateUser(email, password);
+  const result = await authenticateUser(username, password);
   if (!result) {
-    return { error: "Invalid email or password" };
+    return { error: "Invalid username or password" };
   }
 
   // Determine redirect based on user role
@@ -48,17 +48,17 @@ export default function Login() {
         <Form method="post" className="mt-8 space-y-6">
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
-              <label htmlFor="email" className="sr-only">
-                Email
+              <label htmlFor="username" className="sr-only">
+                Username
               </label>
               <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
+                id="username"
+                name="username"
+                type="text"
+                autoComplete="username"
                 required
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Email"
+                placeholder="Username"
               />
             </div>
             <div>
