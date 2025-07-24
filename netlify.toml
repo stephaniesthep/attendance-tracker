@@ -1,6 +1,10 @@
 [build]
-command = "npm run build"
+command = "npm ci && npm run build"
 publish = "build/client"
+
+[build.environment]
+NODE_ENV = "development"
+NPM_FLAGS = "--include=dev"
 
 [dev]
 command = "npm run dev"
