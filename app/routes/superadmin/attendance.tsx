@@ -21,6 +21,7 @@ type AttendanceRecord = {
   userName: string;
   userDivision: string;
   date: string;
+  shift: string | null;
   checkInTime: string;
   checkOutTime: string | null;
   duration: number | null;
@@ -57,31 +58,70 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
   });
 
-  const records: AttendanceRecord[] = attendances.map((attendance) => {
-    // Calculate duration if both checkIn and checkOut exist
-    let duration = null;
-    if (attendance.checkIn && attendance.checkOut) {
-      const checkInTime = new Date(attendance.checkIn);
-      const checkOutTime = new Date(attendance.checkOut);
-      duration = Math.floor((checkOutTime.getTime() - checkInTime.getTime()) / (1000 * 60)); // duration in minutes
-    }
+  const records: AttendanceRecord[] = await Promise.all(
+    attendances.map(async (attendance) => {
+      // Calculate duration if both checkIn and checkOut exist
+      let duration = null;
+      if (attendance.checkIn && attendance.checkOut) {
+        const checkInTime = new Date(attendance.checkIn);
+        const checkOutTime = new Date(attendance.checkOut);
+        duration = Math.floor((checkOutTime.getTime() - checkInTime.getTime()) / (1000 * 60)); // duration in minutes
+      }
 
-    return {
-      id: attendance.id,
-      userName: attendance.user.name,
-      userDivision: attendance.user.department || "No Department",
-      date: attendance.date,
-      checkInTime: attendance.checkIn ? format(new Date(attendance.checkIn), "HH:mm:ss") : "",
-      checkOutTime: attendance.checkOut ? format(new Date(attendance.checkOut), "HH:mm:ss") : null,
-      duration: duration,
-      checkInLocation: attendance.locationIn || "",
-      checkInLocationName: null, // This field doesn't exist in current schema
-      checkOutLocation: attendance.locationOut || null,
-      checkOutLocationName: null, // This field doesn't exist in current schema
-      checkInPhoto: attendance.photoIn || "",
-      checkOutPhoto: attendance.photoOut || null,
-    };
-  });
+      // Generate location names from coordinates using the location service
+      let checkInLocationName = null;
+      let checkOutLocationName = null;
+
+      try {
+        const { enhancedLocationService } = await import("~/utils/location.server.enhanced");
+        
+        // Get check-in location name
+        if (attendance.locationIn) {
+          try {
+            const coordinates = JSON.parse(attendance.locationIn);
+            if (coordinates.lat && coordinates.lng) {
+              const locationResult = await enhancedLocationService.getLocationName(coordinates.lat, coordinates.lng);
+              checkInLocationName = locationResult.name;
+            }
+          } catch (error) {
+            console.error("Failed to parse check-in location:", error);
+          }
+        }
+
+        // Get check-out location name
+        if (attendance.locationOut) {
+          try {
+            const coordinates = JSON.parse(attendance.locationOut);
+            if (coordinates.lat && coordinates.lng) {
+              const locationResult = await enhancedLocationService.getLocationName(coordinates.lat, coordinates.lng);
+              checkOutLocationName = locationResult.name;
+            }
+          } catch (error) {
+            console.error("Failed to parse check-out location:", error);
+          }
+        }
+      } catch (error) {
+        console.error("Location service not available:", error);
+      }
+
+      return {
+        id: attendance.id,
+        userName: attendance.user.name,
+        userDivision: attendance.user.department || "No Department",
+        date: attendance.date,
+        shift: (attendance as any).shift || null,
+        checkInTime: attendance.checkIn ? format(new Date(attendance.checkIn), "HH:mm:ss") : "",
+        checkOutTime: attendance.checkOut ? format(new Date(attendance.checkOut), "HH:mm:ss") : null,
+        duration: duration,
+        checkInLocation: attendance.locationIn || "",
+        checkInLocationName: checkInLocationName,
+        checkOutLocation: attendance.locationOut || null,
+        checkOutLocationName: checkOutLocationName,
+        checkInPhoto: attendance.photoIn || "",
+        checkOutPhoto: attendance.photoOut || null,
+      };
+    })
+  );
 
   return { records, currentDate: dateString };
 }
@@ -151,11 +191,17 @@ export default function SuperAdminAttendance() {
       header: "Division",
       cell: (info) => info.getValue(),
     }),
-    columnHelper.accessor("checkInTime", {
+    columnHelper.accessor("shift", {
       header: "Shift",
       cell: (info) => {
-        const checkInTime = info.getValue();
-        return getShift(checkInTime);
+        const shift = info.getValue();
+        // If shift is available from database, use it; otherwise calculate from check-in time
+        if (shift) {
+          return shift.charAt(0).toUpperCase() + shift.slice(1);
+        }
+        // Fallback to calculated shift for backward compatibility
+        const row = info.row.original;
+        return getShift(row.checkInTime);
       },
     }),
     columnHelper.accessor("checkInTime", {
@@ -372,7 +418,7 @@ export default function SuperAdminAttendance() {
         record.date,
         record.userName,
         record.userDivision,
-        getShift(record.checkInTime),
+        record.shift ? record.shift.charAt(0).toUpperCase() + record.shift.slice(1) : getShift(record.checkInTime),
         record.checkInTime,
         record.checkOutTime || "-",
         record.duration ? `${Math.floor(record.duration / 60)}h ${record.duration % 60}m` : "-",
@@ -476,7 +522,7 @@ export default function SuperAdminAttendance() {
         date: record.date,
         name: record.userName,
         division: record.userDivision,
-        shift: getShift(record.checkInTime),
+        shift: record.shift ? record.shift.charAt(0).toUpperCase() + record.shift.slice(1) : getShift(record.checkInTime),
         checkIn: record.checkInTime,
         checkOut: record.checkOutTime || "-",
         duration: record.duration ? `${Math.floor(record.duration / 60)}h ${record.duration % 60}m` : "-",

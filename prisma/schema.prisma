@@ -21,6 +21,7 @@ model User {
   roles             Role[]
   attendances       Attendance[]
   createdAttendances Attendance[]      @relation("AttendanceCreatedBy")
+  offDays           OffDay[]
 
   @@map("users")
 }
@@ -97,6 +98,7 @@ model Attendance {
   checkOut    DateTime?
   date        String
   status      String    @default("present")
+  shift       String?   // morning, afternoon, night
   photoIn     String?
   photoOut    String?
   locationIn  String?
@@ -109,4 +111,19 @@ model Attendance {
   creator     User?     @relation("AttendanceCreatedBy", fields: [createdBy], references: [id])
 
   @@map("attendances")
+}
+
+// Off Day model to track when users are on leave
+model OffDay {
+  id        String   @id @default(cuid())
+  userId    String
+  startDate DateTime
+  endDate   DateTime
+  reason    String?  @default("Off Day")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("off_days")
 }

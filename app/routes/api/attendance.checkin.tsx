@@ -12,6 +12,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const photo = formData.get("photo");
     const location = formData.get("location");
     const locationName = formData.get("locationName");
+    const shift = formData.get("shift");
 
     if (typeof photo !== "string" || typeof location !== "string") {
       return Response.json({ error: "Invalid data provided" }, { status: 400 });
@@ -52,6 +53,7 @@ export async function action({ request }: ActionFunctionArgs) {
         photoIn: photo,
         locationIn: location,
         status: "present",
+        shift: typeof shift === "string" ? shift : "morning",
       },
     });
 

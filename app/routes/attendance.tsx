@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useLoaderData, useFetcher, useRevalidator } from "react-router";
-import type { LoaderFunctionArgs } from "react-router";
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import { redirect } from "react-router";
 import { requireUser } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
 import { format } from "date-fns";
@@ -16,6 +17,55 @@ import {
   type LocationOptions
 } from "~/utils/location.client.enhanced";
 
+export async function action({ request }: ActionFunctionArgs) {
+  try {
+    const user = await requireUser(request);
+    const formData = await request.formData();
+    const action = formData.get("action");
+
+    if (action === "setOffDay") {
+      const endDate = formData.get("endDate");
+      
+      if (typeof endDate !== "string") {
+        return Response.json({ error: "Invalid end date" }, { status: 400 });
+      }
+
+      // Create off day record
+      await prisma.offDay.create({
+        data: {
+          userId: user.id,
+          startDate: new Date(),
+          endDate: new Date(endDate + "T23:59:59"),
+        },
+      });
+
+      return redirect("/attendance");
+    }
+
+    if (action === "updateOffDay") {
+      const offDayId = formData.get("offDayId");
+      const endDate = formData.get("endDate");
+      
+      if (typeof offDayId !== "string" || typeof endDate !== "string") {
+        return Response.json({ error: "Invalid data" }, { status: 400 });
+      }
+
+      // Update off day record
+      await prisma.offDay.update({
+        where: { id: offDayId },
+        data: { endDate: new Date(endDate + "T23:59:59") },
+      });
+
+      return redirect("/attendance");
+    }
+
+    return Response.json({ error: "Invalid action" }, { status: 400 });
+  } catch (error) {
+    console.error("Attendance action error:", error);
+    return Response.json({ error: "An error occurred" }, { status: 500 });
+  }
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   try {
     const user = await requireUser(request);
@@ -28,7 +78,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
       },
     });
 
-    return { user, todayAttendance };
+    // Check if user has an active off day
+    const activeOffDay = await prisma.offDay.findFirst({
+      where: {
+        userId: user.id,
+        startDate: { lte: new Date() },
+        endDate: { gte: new Date() },
+      },
+    });
+
+    return { user, todayAttendance, activeOffDay };
   } catch (error) {
     console.error("Attendance loader error:", error);
     throw new Response("Unable to load attendance page", { status: 500 });
@@ -36,7 +95,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export default function Attendance() {
-  const { user, todayAttendance } = useLoaderData<typeof loader>();
+  const { user, todayAttendance, activeOffDay } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
   const revalidator = useRevalidator();
   const webcamRef = useRef<Webcam>(null);
@@ -51,6 +110,9 @@ export default function Attendance() {
   const [gpsAccuracy, setGpsAccuracy] = useState<string>('');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+  const [selectedShift, setSelectedShift] = useState<string>('morning');
+  const [showOffDayModal, setShowOffDayModal] = useState(false);
+  const [offDayEndDate, setOffDayEndDate] = useState<string>('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const getLocation = useCallback(async () => {
@@ -212,6 +274,11 @@ export default function Attendance() {
   }, [capturedImage]);
 
   const handleCheckIn = () => {
+    if (activeOffDay) {
+      alert("You cannot check in while on off day.");
+      return;
+    }
+
     if (!capturedImage || !location) {
       alert("Please capture a photo and enable location services.");
       return;
@@ -227,12 +294,18 @@ export default function Attendance() {
         photo: capturedImage,
         location: JSON.stringify(location),
         locationName: locationName || "",
+        shift: selectedShift,
       },
       { method: "post", action: "/api/attendance/checkin" }
     );
   };
 
   const handleCheckOut = () => {
+    if (activeOffDay) {
+      alert("You cannot check out while on off day.");
+      return;
+    }
+
     if (!capturedImage || !location) {
       alert("Please capture a photo and enable location services.");
       return;
@@ -338,17 +411,29 @@ export default function Attendance() {
                 <div>
                   <h3 className="text-lg font-medium text-gray-900">Current Status</h3>
                   <p className="mt-1 text-sm text-gray-600">
-                    {todayAttendance
+                    {activeOffDay
+                      ? `You are on off day until ${format(new Date(activeOffDay.endDate), 'dd/MM/yyyy')}`
+                      : todayAttendance
                       ? todayAttendance.checkOut
                         ? "You have completed your attendance for today"
                         : "You are checked in"
                       : "You have not checked in yet"}
                   </p>
+                  {todayAttendance?.shift && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Shift: {todayAttendance.shift.charAt(0).toUpperCase() + todayAttendance.shift.slice(1)}
+                    </p>
+                  )}
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Clock className="h-5 w-5 text-gray-400" />
-                  <span className="text-sm text-gray-500">
-                    {new Date().toLocaleTimeString()}
+                <div className="flex flex-col items-end space-y-1">
+                  <div className="flex items-center space-x-2">
+                    <Clock className="h-5 w-5 text-gray-400" />
+                    <span className="text-sm text-gray-500">
+                      {new Date().toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <span className="text-xs text-gray-400">
+                    {format(new Date(), 'dd/MM/yyyy')}
                   </span>
                 </div>
               </div>
@@ -375,6 +460,131 @@ export default function Attendance() {
                     <h3 className="text-sm font-medium text-green-800">Success</h3>
                     <p className="text-sm text-green-700 mt-1">{submitSuccess}</p>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Off Day and Shift Selection */}
+            {!activeOffDay && (
+              <div className="bg-white border rounded-lg p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-medium text-gray-900">Options</h3>
+                </div>
+                
+                {/* Shift Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Shift
+                  </label>
+                  <select
+                    value={selectedShift}
+                    onChange={(e) => setSelectedShift(e.target.value)}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  >
+                    <option value="morning">Morning</option>
+                    <option value="afternoon">Afternoon</option>
+                    <option value="night">Night</option>
+                  </select>
+                </div>
+
+                {/* Off Day Button */}
+                <div>
+                  <button
+                    onClick={() => setShowOffDayModal(true)}
+                    className="w-full inline-flex items-center justify-center px-4 py-2 border border-orange-300 text-sm font-medium rounded-md text-orange-700 bg-orange-50 hover:bg-orange-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+                  >
+                    Set Off Day
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Off Day Modal */}
+            {showOffDayModal && (
+              <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+                <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+                  <div className="mt-3">
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">Set Off Day</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Off day until when?
+                        </label>
+                        <input
+                          type="date"
+                          value={offDayEndDate}
+                          onChange={(e) => setOffDayEndDate(e.target.value)}
+                          min={format(new Date(), 'yyyy-MM-dd')}
+                          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                        />
+                      </div>
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={() => {
+                            if (offDayEndDate) {
+                              fetcher.submit(
+                                {
+                                  action: "setOffDay",
+                                  endDate: offDayEndDate,
+                                },
+                                { method: "post" }
+                              );
+                              setShowOffDayModal(false);
+                              setOffDayEndDate('');
+                            }
+                          }}
+                          disabled={!offDayEndDate}
+                          className="flex-1 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Set Off Day
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowOffDayModal(false);
+                            setOffDayEndDate('');
+                          }}
+                          className="flex-1 inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Active Off Day Management */}
+            {activeOffDay && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-medium text-orange-800">Off Day Active</h3>
+                    <p className="mt-1 text-sm text-orange-600">
+                      You are on off day until {format(new Date(activeOffDay.endDate), 'dd/MM/yyyy')}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newEndDate = prompt(
+                        "Enter new end date (YYYY-MM-DD):",
+                        format(new Date(activeOffDay.endDate), 'yyyy-MM-dd')
+                      );
+                      if (newEndDate) {
+                        fetcher.submit(
+                          {
+                            action: "updateOffDay",
+                            offDayId: activeOffDay.id,
+                            endDate: newEndDate,
+                          },
+                          { method: "post" }
+                        );
+                      }
+                    }}
+                    className="inline-flex items-center px-3 py-2 border border-orange-300 text-sm font-medium rounded-md text-orange-700 bg-white hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+                  >
+                    Edit End Date
+                  </button>
                 </div>
               </div>
             )}

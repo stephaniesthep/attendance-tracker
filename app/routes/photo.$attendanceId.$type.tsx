@@ -84,6 +84,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     // Invalid location data
   }
 
+  // Generate location name from coordinates using the location service
+  let locationName = null;
+  if (location) {
+    try {
+      const { enhancedLocationService } = await import("~/utils/location.server.enhanced");
+      const locationResult = await enhancedLocationService.getLocationName(location.lat, location.lng);
+      locationName = locationResult.name;
+    } catch (error) {
+      console.error("Failed to get location name for photo:", error);
+    }
+  }
+
   const photoInfo: PhotoData = {
     id: attendance.id,
     type: type as "checkin" | "checkout",
@@ -92,7 +104,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     userDivision: attendance.user.department || "No Department",
     date: format(new Date(attendance.date), "EEEE, MMMM d, yyyy"),
     time: format(new Date(timeData), "HH:mm:ss"),
-    locationName: null, // Location names are not stored separately in current schema
+    locationName,
     location,
   };
 
