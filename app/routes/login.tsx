@@ -5,39 +5,54 @@ import { authenticateUser, getUserPrimaryRole } from "~/utils/auth.server";
 import { createUserSession } from "~/utils/session.server";
 
 export async function action({ request }: ActionFunctionArgs) {
-  const formData = await request.formData();
-  const username = formData.get("username");
-  const password = formData.get("password");
+  try {
+    const formData = await request.formData();
+    const username = formData.get("username");
+    const password = formData.get("password");
 
-  if (typeof username !== "string" || typeof password !== "string") {
-    return { error: "Invalid form data" };
-  }
+    console.log('Login attempt for username:', username);
 
-  const result = await authenticateUser(username, password);
-  if (!result) {
-    return { error: "Invalid username or password" };
-  }
+    if (typeof username !== "string" || typeof password !== "string") {
+      console.log('Invalid form data');
+      return { error: "Invalid form data" };
+    }
 
-  // Determine redirect based on user's primary role using RBAC
-  let redirectTo = "/attendance"; // Default for workers
-  
-  // The user returned from authenticateUser includes roles
-  const primaryRole = getUserPrimaryRole(result.user as any);
-  
-  switch (primaryRole) {
-    case "SUPERADMIN":
-      redirectTo = "/superadmin";
-      break;
-    case "ADMIN":
-      redirectTo = "/admin";
-      break;
-    case "WORKER":
-    default:
-      redirectTo = "/attendance";
-      break;
+    const result = await authenticateUser(username, password);
+    console.log('Authentication result:', result ? 'Success' : 'Failed');
+    
+    if (!result) {
+      return { error: "Invalid username or password" };
+    }
+
+    // Determine redirect based on user's primary role using RBAC
+    let redirectTo = "/attendance"; // Default for workers
+    
+    // The user returned from authenticateUser includes roles
+    const userWithRoles = result.user as any;
+    console.log('User roles:', userWithRoles.roles);
+    
+    const primaryRole = getUserPrimaryRole(userWithRoles);
+    console.log('Primary role determined:', primaryRole);
+    
+    switch (primaryRole) {
+      case "SUPERADMIN":
+        redirectTo = "/superadmin";
+        break;
+      case "ADMIN":
+        redirectTo = "/admin";
+        break;
+      case "WORKER":
+      default:
+        redirectTo = "/attendance";
+        break;
+    }
+    
+    console.log('Redirecting to:', redirectTo);
+    return createUserSession(result.token, redirectTo);
+  } catch (error) {
+    console.error('Login error:', error);
+    return { error: "An error occurred during login" };
   }
-  
-  return createUserSession(result.token, redirectTo);
 }
 
 export default function Login() {

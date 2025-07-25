@@ -12,18 +12,9 @@ import type { User } from "@prisma/client";
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
   
-  // Get user with roles to determine primary role
-  const userWithRoles = await prisma.user.findUnique({
-    where: { id: user.id },
-    include: { roles: true },
-  });
-  
-  if (!userWithRoles) {
-    throw new Error("User not found");
-  }
-  
+  // User already has roles loaded from requireUser -> getUserFromToken
   // Determine user's primary role using RBAC
-  const primaryRole = getUserPrimaryRole(userWithRoles as User & { roles: { name: string }[] });
+  const primaryRole = getUserPrimaryRole(user as User & { roles: { name: string }[] });
   
   // Redirect superadmin to their panel
   if (primaryRole === "SUPERADMIN") {
@@ -36,23 +27,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
   
   const today = new Date();
+  const todayFormatted = format(today, "yyyy-MM-dd");
   
-  const todayAttendance = await prisma.attendance.findFirst({
-    where: {
-      userId: user.id,
-      date: format(today, "yyyy-MM-dd"),
-    },
-  });
-
-  const recentAttendance = await prisma.attendance.findMany({
-    where: {
-      userId: user.id,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    take: 5,
-  });
+  // Optimize by running both attendance queries in parallel
+  const [todayAttendance, recentAttendance] = await Promise.all([
+    prisma.attendance.findFirst({
+      where: {
+        userId: user.id,
+        date: todayFormatted,
+      },
+    }),
+    prisma.attendance.findMany({
+      where: {
+        userId: user.id,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: 5,
+    })
+  ]);
 
   return { user, todayAttendance, recentAttendance };
 }

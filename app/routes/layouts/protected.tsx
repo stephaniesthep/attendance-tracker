@@ -1,17 +1,13 @@
 import { Outlet, Link, useLoaderData, Form } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
-import { getUserWithPermissions } from "~/utils/rbac.server";
 import { userHasRole } from "~/utils/auth";
 import { LogOut, Home, Camera, Users, User, Shield } from "lucide-react";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
-  // Get user with roles for navigation display
-  const userWithRoles = await getUserWithPermissions(user.id);
-  if (!userWithRoles) {
-    throw new Error("User not found");
-  }
+  // User from requireUser already has roles loaded from getUserFromToken
+  const userWithRoles = user as any; // Cast since we know it has roles from getUserFromToken
   
   // Check roles on server side and pass to client
   const isSuperAdmin = userHasRole(userWithRoles, "SUPERADMIN");

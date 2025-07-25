@@ -1,4 +1,5 @@
 import { prisma } from "./db.server";
+import { userCache, getCacheKey } from "./cache.server";
 import type { User, Role, Permission } from "@prisma/client";
 
 // Types for RBAC
@@ -18,7 +19,14 @@ export type PermissionCheck = {
  * Get user with roles and permissions
  */
 export async function getUserWithPermissions(userId: string): Promise<UserWithRoles | null> {
-  return prisma.user.findUnique({
+  // Check cache first
+  const cacheKey = getCacheKey.userWithPermissions(userId);
+  const cachedUser = userCache.get<UserWithRoles>(cacheKey);
+  if (cachedUser) {
+    return cachedUser;
+  }
+
+  const user = await prisma.user.findUnique({
     where: { id: userId },
     include: {
       roles: {
@@ -28,25 +36,34 @@ export async function getUserWithPermissions(userId: string): Promise<UserWithRo
       },
     },
   });
+
+  if (user) {
+    // Cache for 2 minutes
+    userCache.set(cacheKey, user, 2 * 60 * 1000);
+  }
+
+  return user;
 }
 
 /**
  * Check if user has a specific permission
+ * Optimized version that accepts pre-loaded user data to avoid redundant DB calls
  */
 export async function hasPermission(
   userId: string,
   permission: PermissionCheck,
   targetUserId?: string,
-  targetDepartment?: string
+  targetDepartment?: string,
+  preloadedUser?: UserWithRoles
 ): Promise<boolean> {
-  const user = await getUserWithPermissions(userId);
+  const user = preloadedUser || await getUserWithPermissions(userId);
   if (!user || !user.isActive) return false;
 
   // Get all user permissions from all roles
   const userPermissions = user.roles.flatMap(role => role.permissions);
 
   // Check for exact permission match
-  const hasExactPermission = userPermissions.some(p => 
+  const hasExactPermission = userPermissions.some(p =>
     p.action === permission.action &&
     p.entity === permission.entity &&
     p.access === permission.access
@@ -130,9 +147,10 @@ export async function getUserPermissions(userId: string): Promise<Permission[]> 
 
 /**
  * Check if user has a specific role
+ * Optimized version that accepts pre-loaded user data to avoid redundant DB calls
  */
-export async function hasRole(userId: string, roleName: string): Promise<boolean> {
-  const user = await getUserWithPermissions(userId);
+export async function hasRole(userId: string, roleName: string, preloadedUser?: UserWithRoles): Promise<boolean> {
+  const user = preloadedUser || await getUserWithPermissions(userId);
   if (!user) return false;
 
   return user.roles.some(role => role.name === roleName);

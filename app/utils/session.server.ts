@@ -1,6 +1,6 @@
 import { createCookieSessionStorage, redirect } from "react-router";
 import { getUserFromToken, getUserPrimaryRole, userHasRole } from "./auth.server";
-import { hasPermission, hasRole, PERMISSIONS, ROLES } from "./rbac.server";
+import { hasPermission, hasRole, PERMISSIONS, ROLES, getUserWithPermissions } from "./rbac.server";
 import type { User } from "@prisma/client";
 import type { PermissionCheck } from "./rbac.server";
 
@@ -62,11 +62,18 @@ export async function requirePermission(
 ): Promise<User> {
   const user = await requireUser(request);
   
+  // Get user with permissions once to avoid redundant DB calls
+  const userWithPermissions = await getUserWithPermissions(user.id);
+  if (!userWithPermissions) {
+    throw redirect("/login");
+  }
+  
   const hasRequiredPermission = await hasPermission(
     user.id,
     permission,
     targetUserId,
-    targetDepartment
+    targetDepartment,
+    userWithPermissions
   );
 
   if (!hasRequiredPermission) {
@@ -82,7 +89,13 @@ export async function requirePermission(
 export async function requireRole(request: Request, roleName: string): Promise<User> {
   const user = await requireUser(request);
   
-  const hasRequiredRole = await hasRole(user.id, roleName);
+  // Get user with roles once to avoid redundant DB calls
+  const userWithRoles = await getUserWithPermissions(user.id);
+  if (!userWithRoles) {
+    throw redirect("/login");
+  }
+  
+  const hasRequiredRole = await hasRole(user.id, roleName, userWithRoles);
   if (!hasRequiredRole) {
     throw redirect("/dashboard");
   }
@@ -96,9 +109,15 @@ export async function requireRole(request: Request, roleName: string): Promise<U
 export async function requireAnyRole(request: Request, roleNames: string[]): Promise<User> {
   const user = await requireUser(request);
   
+  // Get user with roles once to avoid redundant DB calls
+  const userWithRoles = await getUserWithPermissions(user.id);
+  if (!userWithRoles) {
+    throw redirect("/login");
+  }
+  
   let hasAnyRequiredRole = false;
   for (const roleName of roleNames) {
-    if (await hasRole(user.id, roleName)) {
+    if (await hasRole(user.id, roleName, userWithRoles)) {
       hasAnyRequiredRole = true;
       break;
     }

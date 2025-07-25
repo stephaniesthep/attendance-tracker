@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "./db.server";
+import { userCache, getCacheKey } from "./cache.server";
 import type { User } from "@prisma/client";
 
 const JWT_SECRET = process.env.JWT_SECRET || "default-secret-change-in-production";
@@ -26,14 +27,25 @@ export function verifyToken(token: string): { userId: string } | null {
 }
 
 export async function authenticateUser(username: string, password: string): Promise<{ user: User; token: string } | null> {
-  // Find user with their password and roles
+  // Find user with their password only - optimize by not loading roles/permissions here
   const user = await prisma.user.findUnique({
     where: { username },
-    include: {
-      password: true,
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      department: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+      password: {
+        select: {
+          hash: true,
+        },
+      },
       roles: {
-        include: {
-          permissions: true,
+        select: {
+          name: true,
         },
       },
     },
@@ -50,7 +62,7 @@ export async function authenticateUser(username: string, password: string): Prom
 
   const token = generateToken(user.id);
   
-  // Return user without password for security
+  // Return user without password for security - roles are included for primary role determination
   const { password: _, ...userWithoutPassword } = user;
   return { user: userWithoutPassword as User, token };
 }
@@ -61,12 +73,35 @@ export async function getUserFromToken(token: string): Promise<User | null> {
     return null;
   }
 
+  // Check cache first
+  const cacheKey = getCacheKey.user(payload.userId);
+  const cachedUser = userCache.get<User>(cacheKey);
+  if (cachedUser) {
+    return cachedUser;
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    include: {
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      department: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
       roles: {
-        include: {
-          permissions: true,
+        select: {
+          id: true,
+          name: true,
+          permissions: {
+            select: {
+              id: true,
+              action: true,
+              entity: true,
+              access: true,
+            },
+          },
         },
       },
     },
@@ -76,7 +111,10 @@ export async function getUserFromToken(token: string): Promise<User | null> {
     return null;
   }
 
-  return user;
+  // Cache the user for 2 minutes (shorter TTL for auth data)
+  userCache.set(cacheKey, user as User, 2 * 60 * 1000);
+
+  return user as User;
 }
 
 export async function createUser(data: {
@@ -169,6 +207,10 @@ export async function updateUser(userId: string, data: {
     });
   }
 
+  // Clear cache for this user since data has changed
+  userCache.delete(getCacheKey.user(userId));
+  userCache.delete(getCacheKey.userWithPermissions(userId));
+
   return user;
 }
 
@@ -193,6 +235,10 @@ export async function deleteUser(userId: string): Promise<void> {
   await prisma.user.delete({
     where: { id: userId }
   });
+
+  // Clear cache for this user
+  userCache.delete(getCacheKey.user(userId));
+  userCache.delete(getCacheKey.userWithPermissions(userId));
 }
 
 
