@@ -32,6 +32,25 @@ export async function action({ request }: ActionFunctionArgs) {
     const today = new Date();
     const todayString = format(today, 'yyyy-MM-dd'); // Use same format as loader
     
+    // Check if user is on an off day
+    const currentOffDay = await prisma.offDay.findFirst({
+      where: {
+        userId: user.id,
+        startDate: {
+          lte: today,
+        },
+        endDate: {
+          gte: today,
+        },
+      },
+    });
+
+    if (currentOffDay) {
+      return Response.json({
+        error: `You cannot check in during your off day period (${format(currentOffDay.startDate, 'MMM dd, yyyy')} - ${format(currentOffDay.endDate, 'MMM dd, yyyy')})${currentOffDay.reason ? ` - ${currentOffDay.reason}` : ''}`
+      }, { status: 400 });
+    }
+    
     // Check if already checked in today
     const existingAttendance = await prisma.attendance.findFirst({
       where: {

@@ -2,7 +2,7 @@ import { Outlet, Link, useLoaderData, Form } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
 import { userHasRole } from "~/utils/auth";
-import { LogOut, Home, Camera, Users, User, Shield } from "lucide-react";
+import { LogOut, Home, Camera, Users, User, Shield, BarChart3 } from "lucide-react";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
@@ -48,13 +48,24 @@ export default function ProtectedLayout() {
                   <Home className="w-4 h-4 mr-2" />
                   Dashboard
                 </Link>
-                <Link
-                  to="/attendance"
-                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
-                  <Camera className="w-4 h-4 mr-2" />
-                  Attendance
-                </Link>
+                {(isAdmin || isSuperAdmin) && (
+                  <Link
+                    to="/admin/attendance"
+                    className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                  >
+                    <BarChart3 className="w-4 h-4 mr-2" />
+                    Attendance Report
+                  </Link>
+                )}
+                {!isSuperAdmin && (
+                  <Link
+                    to="/attendance"
+                    className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                  >
+                    <Camera className="w-4 h-4 mr-2" />
+                    Attendance
+                  </Link>
+                )}
                 {isSuperAdmin && (
                   <Link
                     to="/superadmin"

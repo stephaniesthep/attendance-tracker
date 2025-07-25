@@ -7,7 +7,8 @@ export default [
   
   // Protected routes with layout
   layout("routes/layouts/protected.tsx", [
-    index("routes/dashboard.tsx"),
+    index("routes/home.tsx"),
+    route("dashboard", "routes/dashboard.tsx"),
     route("attendance", "routes/attendance.tsx"),
     route("profile", "routes/profile.tsx"),
     route("photo/:attendanceId/:type", "routes/photo.$attendanceId.$type.tsx"),

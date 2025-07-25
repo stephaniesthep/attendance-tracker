@@ -1,19 +1,16 @@
-import type { LoaderFunctionArgs, MetaFunction } from "react-router";
-import { useLoaderData } from "react-router";
-import { Welcome } from "../welcome/welcome";
+import type { LoaderFunctionArgs } from "react-router";
+import { redirect } from "react-router";
+import { requireUser } from "~/utils/session.server";
 
-export const meta: MetaFunction = () => {
-  return [
-    { title: "New React Router App" },
-    { name: "description", content: "Welcome to React Router!" },
-  ];
-};
-
-export function loader({ context }: LoaderFunctionArgs) {
-  return { message: (context as any)?.VALUE_FROM_EXPRESS || "Welcome!" };
+export async function loader({ request }: LoaderFunctionArgs) {
+  // Ensure user is authenticated
+  await requireUser(request);
+  
+  // Redirect to dashboard
+  return redirect("/dashboard");
 }
 
 export default function Home() {
-  const { message } = useLoaderData<typeof loader>();
-  return <Welcome message={message} />;
+  // This component should never render since we always redirect
+  return null;
 }

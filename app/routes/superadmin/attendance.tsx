@@ -107,7 +107,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return {
         id: attendance.id,
         userName: attendance.user.name,
-        userDivision: attendance.user.department || "No Department",
+        userDivision: attendance.user.department || "No Division",
         date: attendance.date,
         shift: (attendance as any).shift || null,
         checkInTime: attendance.checkIn ? format(new Date(attendance.checkIn), "HH:mm:ss") : "",
@@ -677,9 +677,9 @@ export default function SuperAdminAttendance() {
               </div>
             </div>
 
-            <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+            <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-400px)] shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
               <table className="min-w-full divide-y divide-gray-300">
-                <thead className="bg-gray-50">
+                <thead className="bg-gray-50 sticky top-0 z-10">
                   {table.getHeaderGroups().map((headerGroup) => (
                     <tr key={headerGroup.id}>
                       {headerGroup.headers.map((header) => (

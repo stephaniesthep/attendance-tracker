@@ -145,11 +145,13 @@ export default function NewUser() {
                   className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="">Select Division</option>
-                  <option value="Supervisor">Supervisor</option>
-                  <option value="HVAC">HVAC</option>
-                  <option value="Kitchen & Laundry">Kitchen & Laundry</option>
+                  <option value="HVAC (AHU)">HVAC (AHU)</option>
+                  <option value="HVAC (Hotel)">HVAC (Hotel)</option>
+                  <option value="HVAC (Residence)">HVAC (Residence)</option>
                   <option value="Public Area">Public Area</option>
-                  <option value="Guest Room">Guest Room</option>
+                  <option value="Kitchen & Laundry">Kitchen & Laundry</option>
+                  <option value="Guest room (Hotel)">Guest room (Hotel)</option>
+                  <option value="Guest room (Residence)">Guest room (Residence)</option>
                 </select>
               </div>
 

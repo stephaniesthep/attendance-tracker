@@ -6,7 +6,8 @@ import { requireUser } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
 import { format } from "date-fns";
 import Webcam from "react-webcam";
-import { Camera, MapPin, Clock, Download, AlertCircle, CheckCircle } from "lucide-react";
+import { Camera, MapPin, Clock, Download, AlertCircle, CheckCircle, Calendar } from "lucide-react";
+import { Calendar as CalendarComponent } from "~/components/ui/calendar";
 import {
   reverseGeocode,
   getCurrentLocation,
@@ -54,6 +55,21 @@ export async function action({ request }: ActionFunctionArgs) {
       await prisma.offDay.update({
         where: { id: offDayId },
         data: { endDate: new Date(endDate + "T23:59:59") },
+      });
+
+      return redirect("/attendance");
+    }
+
+    if (action === "cancelOffDay") {
+      const offDayId = formData.get("offDayId");
+      
+      if (typeof offDayId !== "string") {
+        return Response.json({ error: "Invalid off day ID" }, { status: 400 });
+      }
+
+      // Delete off day record
+      await prisma.offDay.delete({
+        where: { id: offDayId },
       });
 
       return redirect("/attendance");
@@ -113,6 +129,11 @@ export default function Attendance() {
   const [selectedShift, setSelectedShift] = useState<string>('morning');
   const [showOffDayModal, setShowOffDayModal] = useState(false);
   const [offDayEndDate, setOffDayEndDate] = useState<string>('');
+  const [selectedOffDayEndDate, setSelectedOffDayEndDate] = useState<Date | undefined>(undefined);
+  const [showOffDayCalendar, setShowOffDayCalendar] = useState(false);
+  const [showEditOffDayModal, setShowEditOffDayModal] = useState(false);
+  const [editOffDayEndDate, setEditOffDayEndDate] = useState<Date | undefined>(undefined);
+  const [showEditOffDayCalendar, setShowEditOffDayCalendar] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const getLocation = useCallback(async () => {
@@ -506,34 +527,53 @@ export default function Attendance() {
                   <div className="mt-3">
                     <h3 className="text-lg font-medium text-gray-900 mb-4">Set Off Day</h3>
                     <div className="space-y-4">
-                      <div>
+                      <div className="relative">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           Off day until when?
                         </label>
-                        <input
-                          type="date"
-                          value={offDayEndDate}
-                          onChange={(e) => setOffDayEndDate(e.target.value)}
-                          min={format(new Date(), 'yyyy-MM-dd')}
-                          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                        />
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setShowOffDayCalendar(!showOffDayCalendar)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-left bg-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          >
+                            {selectedOffDayEndDate ? format(selectedOffDayEndDate, 'MMM dd, yyyy') : 'Select end date'}
+                            <Calendar className="h-4 w-4 absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                          </button>
+                          {showOffDayCalendar && (
+                            <div className="absolute z-10 mt-1">
+                              <CalendarComponent
+                                selected={selectedOffDayEndDate}
+                                onSelect={(date) => {
+                                  setSelectedOffDayEndDate(date);
+                                  setOffDayEndDate(format(date, 'yyyy-MM-dd'));
+                                  setShowOffDayCalendar(false);
+                                }}
+                                minDate={new Date()}
+                                showClear={false}
+                              />
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <div className="flex space-x-3">
                         <button
                           onClick={() => {
-                            if (offDayEndDate) {
+                            if (selectedOffDayEndDate) {
                               fetcher.submit(
                                 {
                                   action: "setOffDay",
-                                  endDate: offDayEndDate,
+                                  endDate: format(selectedOffDayEndDate, 'yyyy-MM-dd'),
                                 },
                                 { method: "post" }
                               );
                               setShowOffDayModal(false);
                               setOffDayEndDate('');
+                              setSelectedOffDayEndDate(undefined);
+                              setShowOffDayCalendar(false);
                             }
                           }}
-                          disabled={!offDayEndDate}
+                          disabled={!selectedOffDayEndDate}
                           className="flex-1 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Set Off Day
@@ -542,6 +582,82 @@ export default function Attendance() {
                           onClick={() => {
                             setShowOffDayModal(false);
                             setOffDayEndDate('');
+                            setSelectedOffDayEndDate(undefined);
+                            setShowOffDayCalendar(false);
+                          }}
+                          className="flex-1 inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Edit Off Day Modal */}
+            {showEditOffDayModal && activeOffDay && (
+              <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+                <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+                  <div className="mt-3">
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">Edit Off Day End Date</h3>
+                    <div className="space-y-4">
+                      <div className="relative">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          New end date
+                        </label>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setShowEditOffDayCalendar(!showEditOffDayCalendar)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-left bg-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          >
+                            {editOffDayEndDate ? format(editOffDayEndDate, 'MMM dd, yyyy') : 'Select end date'}
+                            <Calendar className="h-4 w-4 absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                          </button>
+                          {showEditOffDayCalendar && (
+                            <div className="absolute z-10 mt-1">
+                              <CalendarComponent
+                                selected={editOffDayEndDate}
+                                onSelect={(date) => {
+                                  setEditOffDayEndDate(date);
+                                  setShowEditOffDayCalendar(false);
+                                }}
+                                minDate={new Date()}
+                                showClear={false}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={() => {
+                            if (editOffDayEndDate) {
+                              fetcher.submit(
+                                {
+                                  action: "updateOffDay",
+                                  offDayId: activeOffDay.id,
+                                  endDate: format(editOffDayEndDate, 'yyyy-MM-dd'),
+                                },
+                                { method: "post" }
+                              );
+                              setShowEditOffDayModal(false);
+                              setEditOffDayEndDate(undefined);
+                              setShowEditOffDayCalendar(false);
+                            }
+                          }}
+                          disabled={!editOffDayEndDate}
+                          className="flex-1 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Update End Date
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowEditOffDayModal(false);
+                            setEditOffDayEndDate(undefined);
+                            setShowEditOffDayCalendar(false);
                           }}
                           className="flex-1 inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                         >
@@ -560,31 +676,34 @@ export default function Attendance() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-lg font-medium text-orange-800">Off Day Active</h3>
-                    <p className="mt-1 text-sm text-orange-600">
-                      You are on off day until {format(new Date(activeOffDay.endDate), 'dd/MM/yyyy')}
-                    </p>
                   </div>
-                  <button
-                    onClick={() => {
-                      const newEndDate = prompt(
-                        "Enter new end date (YYYY-MM-DD):",
-                        format(new Date(activeOffDay.endDate), 'yyyy-MM-dd')
-                      );
-                      if (newEndDate) {
-                        fetcher.submit(
-                          {
-                            action: "updateOffDay",
-                            offDayId: activeOffDay.id,
-                            endDate: newEndDate,
-                          },
-                          { method: "post" }
-                        );
-                      }
-                    }}
-                    className="inline-flex items-center px-3 py-2 border border-orange-300 text-sm font-medium rounded-md text-orange-700 bg-white hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
-                  >
-                    Edit End Date
-                  </button>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => {
+                        setEditOffDayEndDate(new Date(activeOffDay.endDate));
+                        setShowEditOffDayModal(true);
+                      }}
+                      className="inline-flex items-center px-3 py-2 border border-orange-300 text-sm font-medium rounded-md text-orange-700 bg-white hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+                    >
+                      Edit End Date
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm("Are you sure you want to cancel your off day?")) {
+                          fetcher.submit(
+                            {
+                              action: "cancelOffDay",
+                              offDayId: activeOffDay.id,
+                            },
+                            { method: "post" }
+                          );
+                        }
+                      }}
+                      className="inline-flex items-center px-3 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                    >
+                      Cancel End Date
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
