@@ -1,5 +1,6 @@
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from "date-fns";
-import { Calendar, Clock, Moon, Sun, Sunset, X } from "lucide-react";
+import { Calendar, Clock, Moon, Sun, Sunset, X, Download } from "lucide-react";
+import type { DateRange } from "~/components/ui/calendar";
 
 // Define attendance status types and their colors
 export const ATTENDANCE_STATUS = {
@@ -15,11 +16,11 @@ export type AttendanceStatus = typeof ATTENDANCE_STATUS[keyof typeof ATTENDANCE_
 
 // Color mapping for different statuses
 export const STATUS_COLORS = {
-  [ATTENDANCE_STATUS.OFF_DAY]: 'bg-gray-200 text-gray-600 border-gray-300',
+  [ATTENDANCE_STATUS.OFF_DAY]: 'bg-red-200 text-red-800 border-red-300',
   [ATTENDANCE_STATUS.MORNING_SHIFT]: 'bg-yellow-400 text-yellow-900 border-yellow-500',
   [ATTENDANCE_STATUS.AFTERNOON_SHIFT]: 'bg-orange-400 text-orange-900 border-orange-500',
   [ATTENDANCE_STATUS.NIGHT_SHIFT]: 'bg-blue-600 text-white border-blue-700',
-  [ATTENDANCE_STATUS.ABSENT]: 'bg-red-200 text-red-800 border-red-300',
+  [ATTENDANCE_STATUS.ABSENT]: 'bg-gray-200 text-gray-600 border-gray-300',
   [ATTENDANCE_STATUS.PRESENT]: 'bg-green-400 text-green-900 border-green-500'
 } as const;
 
@@ -63,9 +64,13 @@ export interface UserAttendanceData {
 
 interface AttendanceMatrixProps {
   data: UserAttendanceData[];
-  viewType: 'daily' | 'weekly' | 'monthly';
+  viewType: 'daily' | 'weekly' | 'monthly' | 'range';
   selectedDate: Date;
+  selectedRange?: DateRange;
   showUserNames?: boolean;
+  canExport?: boolean;
+  userRole?: 'worker' | 'admin' | 'superadmin';
+  onExport?: () => void;
 }
 
 // Utility function to determine attendance status for a specific date
@@ -129,7 +134,7 @@ export function getAttendanceStatus(
 }
 
 // Generate date range based on view type
-function getDateRange(selectedDate: Date, viewType: 'daily' | 'weekly' | 'monthly'): Date[] {
+function getDateRange(selectedDate: Date, viewType: 'daily' | 'weekly' | 'monthly' | 'range', selectedRange?: DateRange): Date[] {
   switch (viewType) {
     case 'daily':
       return [selectedDate];
@@ -143,38 +148,86 @@ function getDateRange(selectedDate: Date, viewType: 'daily' | 'weekly' | 'monthl
         start: startOfMonth(selectedDate),
         end: endOfMonth(selectedDate)
       });
+    case 'range':
+      if (selectedRange?.from && selectedRange?.to) {
+        return eachDayOfInterval({
+          start: selectedRange.from,
+          end: selectedRange.to
+        });
+      } else if (selectedRange?.from) {
+        return [selectedRange.from];
+      } else {
+        return [selectedDate];
+      }
     default:
       return [selectedDate];
   }
 }
 
-export function AttendanceMatrix({ 
-  data, 
-  viewType, 
-  selectedDate, 
-  showUserNames = true 
+export function AttendanceMatrix({
+  data,
+  viewType,
+  selectedDate,
+  selectedRange,
+  showUserNames = true,
+  canExport = false,
+  userRole = 'worker',
+  onExport
 }: AttendanceMatrixProps) {
-  const dateRange = getDateRange(selectedDate, viewType);
+  const dateRange = getDateRange(selectedDate, viewType, selectedRange);
+  
+  const handleExport = async () => {
+    if (onExport) {
+      onExport();
+      return;
+    }
+
+    // Default export functionality if no custom handler provided
+    try {
+      const { exportAttendanceMatrixToExcel } = await import("~/utils/attendance-matrix-excel");
+      
+      await exportAttendanceMatrixToExcel({
+        data,
+        selectedDate,
+        viewType: viewType as any,
+        userRole,
+        showUserNames,
+        worksheetName: `Attendance Matrix - ${viewType.charAt(0).toUpperCase() + viewType.slice(1)}`
+      });
+    } catch (error) {
+      console.error("Error exporting attendance matrix:", error);
+      alert("Error generating Excel file. Please try again.");
+    }
+  };
   
   return (
     <div className="bg-white shadow overflow-hidden sm:rounded-lg">
       <div className="px-4 py-5 sm:px-6">
-        <h3 className="text-lg leading-6 font-medium text-gray-900 flex items-center">
-          <Calendar className="h-5 w-5 mr-2" />
-          Attendance Matrix - {viewType.charAt(0).toUpperCase() + viewType.slice(1)} View
-        </h3>
-        <p className="mt-1 max-w-2xl text-sm text-gray-500">
-          {format(selectedDate, 'MMMM yyyy')} - Color coded attendance tracking
-        </p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h3 className="text-lg leading-6 font-medium text-gray-900 flex items-center">
+              <Calendar className="h-5 w-5 mr-2" />
+              Attendance Matrix - {viewType.charAt(0).toUpperCase() + viewType.slice(1)} View
+            </h3>
+            <p className="mt-1 max-w-2xl text-sm text-gray-500">
+              {format(selectedDate, 'MMMM yyyy')} - Color coded attendance tracking
+            </p>
+          </div>
+          {canExport && (
+            <button
+              onClick={handleExport}
+              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export Matrix
+            </button>
+          )}
+        </div>
       </div>
       
       {/* Legend */}
       <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
         <div className="flex flex-wrap gap-4 text-xs">
-          <div className="flex items-center">
-            <div className={`w-4 h-4 rounded border mr-2 ${STATUS_COLORS[ATTENDANCE_STATUS.OFF_DAY]}`}></div>
-            <span>Off Day</span>
-          </div>
           <div className="flex items-center">
             <div className={`w-4 h-4 rounded border mr-2 ${STATUS_COLORS[ATTENDANCE_STATUS.MORNING_SHIFT]}`}></div>
             <span>Morning Shift</span>
@@ -186,6 +239,10 @@ export function AttendanceMatrix({
           <div className="flex items-center">
             <div className={`w-4 h-4 rounded border mr-2 ${STATUS_COLORS[ATTENDANCE_STATUS.NIGHT_SHIFT]}`}></div>
             <span>Night Shift</span>
+          </div>
+          <div className="flex items-center">
+            <div className={`w-4 h-4 rounded border mr-2 ${STATUS_COLORS[ATTENDANCE_STATUS.OFF_DAY]}`}></div>
+            <span>Off Day</span>
           </div>
           <div className="flex items-center">
             <div className={`w-4 h-4 rounded border mr-2 ${STATUS_COLORS[ATTENDANCE_STATUS.ABSENT]}`}></div>
@@ -230,15 +287,13 @@ export function AttendanceMatrix({
                 {dateRange.map((date) => {
                   const status = getAttendanceStatus(date, userData.attendances, userData.offDays);
                   const StatusIcon = STATUS_ICONS[status];
-                  const isToday = isSameDay(date, new Date());
                   
                   return (
                     <td key={date.toISOString()} className="px-2 py-4 text-center">
-                      <div 
+                      <div
                         className={`
                           w-12 h-12 rounded-lg border-2 flex items-center justify-center mx-auto
                           ${STATUS_COLORS[status]}
-                          ${isToday ? 'ring-2 ring-blue-500 ring-offset-1' : ''}
                           transition-all duration-200 hover:scale-110
                         `}
                         title={`${userData.user.name} - ${format(date, 'MMM d, yyyy')} - ${status.replace('_', ' ').toUpperCase()}`}

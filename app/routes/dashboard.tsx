@@ -612,7 +612,7 @@ export default function Dashboard() {
   };
 
   const getRoleCount = (roleName: string) => {
-    if (!isSuperAdmin || !("stats" in data) || !data.stats) return 0;
+    if (!isSuperAdmin || !("stats" in data) || !data.stats || !data.stats.usersByRole) return 0;
     const roleData = data.stats.usersByRole.find((r) => r.name === roleName);
     return roleData?._count.users || 0;
   };
@@ -620,145 +620,47 @@ export default function Dashboard() {
   const exportToExcel = async () => {
     // Determine which data to export based on user role
     let dataToExport: UserAttendanceData[] = [];
+    let userRole: 'worker' | 'admin' | 'superadmin' = 'worker';
     let worksheetName = "Attendance Matrix";
+    let showUserNames = true;
     
     if (data.isAdmin && 'workersAttendanceMatrixData' in data) {
       // Admin view - export workers data
       dataToExport = (data as any).workersAttendanceMatrixData || [];
+      userRole = 'admin';
       worksheetName = "Workers Attendance Matrix";
-    } else if (attendanceMatrixData) {
-      // Regular user or SuperAdmin view
+      showUserNames = true;
+    } else if (isSuperAdmin && attendanceMatrixData) {
+      // SuperAdmin view - export all users data
       dataToExport = attendanceMatrixData;
-      worksheetName = isSuperAdmin ? "All Users Attendance Matrix" : "Personal Attendance Matrix";
+      userRole = 'superadmin';
+      worksheetName = "All Users Attendance Matrix";
+      showUserNames = true;
+    } else if (attendanceMatrixData) {
+      // Regular user view - export personal data
+      dataToExport = attendanceMatrixData;
+      userRole = 'worker';
+      worksheetName = "Personal Attendance Matrix";
+      showUserNames = false; // Don't show user names for personal view
     }
 
-    if (!canDownloadExcel || dataToExport.length === 0) return;
+    if (!canDownloadExcel || dataToExport.length === 0) {
+      alert("No data available to export.");
+      return;
+    }
 
     try {
-      // Dynamic import to reduce bundle size
-      const ExcelJS = (await import("exceljs")).default;
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet(worksheetName);
-
-      // Set column headers based on view type
-      const dateRange = getDateRange(new Date(selectedDate), viewType);
+      // Use the new enhanced Excel export utility
+      const { exportAttendanceMatrixToExcel } = await import("~/utils/attendance-matrix-excel");
       
-      // Different headers for multi-user vs single user export
-      const isMultiUser = dataToExport.length > 1;
-      const headers = isMultiUser
-        ? ["Employee", "Department", "Date", "Status", "Check In", "Check Out", "Duration", "Shift"]
-        : ["Date", "Status", "Check In", "Check Out", "Duration", "Shift"];
-
-      worksheet.columns = isMultiUser
-        ? [
-            { header: "Employee", key: "employee", width: 20 },
-            { header: "Department", key: "department", width: 15 },
-            { header: "Date", key: "date", width: 15 },
-            { header: "Status", key: "status", width: 15 },
-            { header: "Check In", key: "checkIn", width: 12 },
-            { header: "Check Out", key: "checkOut", width: 12 },
-            { header: "Duration", key: "duration", width: 12 },
-            { header: "Shift", key: "shift", width: 12 },
-          ]
-        : [
-            { header: "Date", key: "date", width: 15 },
-            { header: "Status", key: "status", width: 15 },
-            { header: "Check In", key: "checkIn", width: 12 },
-            { header: "Check Out", key: "checkOut", width: 12 },
-            { header: "Duration", key: "duration", width: 12 },
-            { header: "Shift", key: "shift", width: 12 },
-          ];
-
-      // Style the header row
-      worksheet.getRow(1).font = { bold: true };
-      worksheet.getRow(1).fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FFE6E6FA" },
-      };
-
-      // Process attendance data
-      dataToExport.forEach((userData) => {
-        dateRange.forEach((date) => {
-          const dateString = format(date, "yyyy-MM-dd");
-          const attendance = userData.attendances.find(
-            (att) => att.date === dateString
-          );
-
-          // Determine status
-          const isOffDay = userData.offDays.some((offDay) => {
-            const startDate = new Date(offDay.startDate);
-            const endDate = new Date(offDay.endDate);
-            return date >= startDate && date <= endDate;
-          });
-
-          let status = "Absent";
-          let checkIn = "-";
-          let checkOut = "-";
-          let duration = "-";
-          let shift = "-";
-
-          if (isOffDay) {
-            status = "Off Day";
-          } else if (attendance && attendance.checkIn) {
-            status = "Present";
-            checkIn = format(new Date(attendance.checkIn), "HH:mm:ss");
-            if (attendance.checkOut) {
-              checkOut = format(new Date(attendance.checkOut), "HH:mm:ss");
-              const checkInTime = new Date(attendance.checkIn);
-              const checkOutTime = new Date(attendance.checkOut);
-              const durationMinutes = Math.floor(
-                (checkOutTime.getTime() - checkInTime.getTime()) / (1000 * 60)
-              );
-              duration = `${Math.floor(durationMinutes / 60)}h ${
-                durationMinutes % 60
-              }m`;
-            }
-            shift = attendance.shift || "Not specified";
-          }
-
-          const rowData = isMultiUser
-            ? {
-                employee: userData.user.name,
-                department: userData.user.department || "No Department",
-                date: format(date, "yyyy-MM-dd (EEE)"),
-                status,
-                checkIn,
-                checkOut,
-                duration,
-                shift,
-              }
-            : {
-                date: format(date, "yyyy-MM-dd (EEE)"),
-                status,
-                checkIn,
-                checkOut,
-                duration,
-                shift,
-              };
-
-          worksheet.addRow(rowData);
-        });
+      await exportAttendanceMatrixToExcel({
+        data: dataToExport,
+        selectedDate: new Date(selectedDate),
+        viewType: viewType as any,
+        userRole,
+        showUserNames,
+        worksheetName
       });
-
-      // Generate Excel file and download
-      const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const filePrefix = data.isAdmin ? "workers-attendance" :
-                        isSuperAdmin ? "all-users-attendance" : "personal-attendance";
-      a.download = `${filePrefix}-${format(
-        new Date(selectedDate),
-        "yyyy-MM-dd"
-      )}-${viewType}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Error generating Excel file:", error);
       alert("Error generating Excel file. Please try again.");
@@ -826,6 +728,9 @@ export default function Dashboard() {
           selectedDate={new Date(selectedDate)}
           viewType={viewType}
           showUserNames={true}
+          canExport={true}
+          userRole="superadmin"
+          onExport={exportToExcel}
         />
 
         {/* Recent Activity */}
@@ -1008,6 +913,28 @@ export default function Dashboard() {
             viewType={viewType}
             selectedDate={new Date(selectedDate)}
             showUserNames={false} // Hide user names since it's personal view
+            canExport={true}
+            userRole="admin"
+            onExport={() => {
+              // Custom export for admin's personal data
+              const exportPersonalData = async () => {
+                try {
+                  const { exportAttendanceMatrixToExcel } = await import("~/utils/attendance-matrix-excel");
+                  await exportAttendanceMatrixToExcel({
+                    data: adminAttendanceMatrixData,
+                    selectedDate: new Date(selectedDate),
+                    viewType: viewType as any,
+                    userRole: 'admin',
+                    showUserNames: false,
+                    worksheetName: "Admin Personal Attendance Matrix"
+                  });
+                } catch (error) {
+                  console.error("Error exporting personal attendance:", error);
+                  alert("Error generating Excel file. Please try again.");
+                }
+              };
+              exportPersonalData();
+            }}
           />
         </div>
 
@@ -1034,6 +961,9 @@ export default function Dashboard() {
             viewType={viewType}
             selectedDate={new Date(selectedDate)}
             showUserNames={true} // Show user names for workers
+            canExport={true}
+            userRole="admin"
+            onExport={exportToExcel}
           />
         </div>
 
@@ -1209,6 +1139,9 @@ export default function Dashboard() {
             viewType={viewType}
             selectedDate={new Date(selectedDate)}
             showUserNames={false} // Hide user names since it's personal view
+            canExport={true}
+            userRole="worker"
+            onExport={exportToExcel}
           />
         </div>
 

@@ -1,22 +1,63 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { differenceInDays, addDays, isSameDay, isWithinInterval } from "date-fns";
+
+export interface DateRange {
+  from?: Date;
+  to?: Date;
+}
 
 interface CalendarProps {
   selected?: Date;
-  onSelect: (date: Date) => void;
+  selectedRange?: DateRange;
+  onSelect?: (date: Date) => void;
+  onSelectRange?: (range: DateRange) => void;
   onClear?: () => void;
   minDate?: Date;
   maxDate?: Date;
   className?: string;
   showClear?: boolean;
+  mode?: 'single' | 'range';
+  maxRangeDays?: number;
 }
 
-export function Calendar({ selected, onSelect, onClear, minDate, maxDate, className = "", showClear = true }: CalendarProps) {
+export function Calendar({
+  selected,
+  selectedRange,
+  onSelect,
+  onSelectRange,
+  onClear,
+  minDate,
+  maxDate,
+  className = "",
+  showClear = true,
+  mode = 'single',
+  maxRangeDays = 31
+}: CalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(selected || new Date());
 
   const today = new Date();
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
+
+  // Helper functions for range selection
+  const isDateInRange = (date: Date): boolean => {
+    if (mode !== 'range' || !selectedRange?.from) return false;
+    
+    if (selectedRange.to) {
+      return isWithinInterval(date, { start: selectedRange.from, end: selectedRange.to });
+    } else {
+      return isSameDay(date, selectedRange.from);
+    }
+  };
+
+  const isDateRangeStart = (date: Date): boolean => {
+    return mode === 'range' && selectedRange?.from ? isSameDay(date, selectedRange.from) : false;
+  };
+
+  const isDateRangeEnd = (date: Date): boolean => {
+    return mode === 'range' && selectedRange?.to ? isSameDay(date, selectedRange.to) : false;
+  };
 
   // Get first day of the month and how many days in the month
   const firstDayOfMonth = new Date(year, month, 1);
@@ -36,6 +77,10 @@ export function Calendar({ selected, onSelect, onClear, minDate, maxDate, classN
   for (let i = daysFromPrevMonth - 1; i >= 0; i--) {
     const day = daysInPrevMonth - i;
     const date = new Date(year, month - 1, day);
+    const inRange = isDateInRange(date);
+    const isRangeStart = isDateRangeStart(date);
+    const isRangeEnd = isDateRangeEnd(date);
+    
     calendarDays.push({
       date,
       day,
@@ -43,6 +88,9 @@ export function Calendar({ selected, onSelect, onClear, minDate, maxDate, classN
       isToday: false,
       isSelected: false,
       isDisabled: (minDate && date < minDate) || (maxDate && date > maxDate),
+      inRange,
+      isRangeStart,
+      isRangeEnd,
     });
   }
 
@@ -50,8 +98,11 @@ export function Calendar({ selected, onSelect, onClear, minDate, maxDate, classN
   for (let day = 1; day <= daysInMonth; day++) {
     const date = new Date(year, month, day);
     const isToday = date.toDateString() === today.toDateString();
-    const isSelected = selected && date.toDateString() === selected.toDateString();
+    const isSelected = mode === 'single' && selected && date.toDateString() === selected.toDateString();
     const isDisabled = (minDate && date < minDate) || (maxDate && date > maxDate);
+    const inRange = isDateInRange(date);
+    const isRangeStart = isDateRangeStart(date);
+    const isRangeEnd = isDateRangeEnd(date);
 
     calendarDays.push({
       date,
@@ -60,6 +111,9 @@ export function Calendar({ selected, onSelect, onClear, minDate, maxDate, classN
       isToday,
       isSelected,
       isDisabled,
+      inRange,
+      isRangeStart,
+      isRangeEnd,
     });
   }
 
@@ -67,6 +121,10 @@ export function Calendar({ selected, onSelect, onClear, minDate, maxDate, classN
   const remainingDays = 42 - calendarDays.length;
   for (let day = 1; day <= remainingDays; day++) {
     const date = new Date(year, month + 1, day);
+    const inRange = isDateInRange(date);
+    const isRangeStart = isDateRangeStart(date);
+    const isRangeEnd = isDateRangeEnd(date);
+    
     calendarDays.push({
       date,
       day,
@@ -74,6 +132,9 @@ export function Calendar({ selected, onSelect, onClear, minDate, maxDate, classN
       isToday: false,
       isSelected: false,
       isDisabled: (minDate && date < minDate) || (maxDate && date > maxDate),
+      inRange,
+      isRangeStart,
+      isRangeEnd,
     });
   }
 
@@ -93,8 +154,39 @@ export function Calendar({ selected, onSelect, onClear, minDate, maxDate, classN
   };
 
   const handleDateClick = (date: Date, isDisabled: boolean) => {
-    if (!isDisabled) {
-      onSelect(date);
+    if (isDisabled) return;
+
+    console.log('Calendar date clicked:', { date, mode, selectedRange });
+
+    if (mode === 'single') {
+      onSelect?.(date);
+    } else if (mode === 'range' && onSelectRange) {
+      if (!selectedRange?.from || (selectedRange.from && selectedRange.to)) {
+        // Start new range
+        console.log('Starting new range with:', date);
+        onSelectRange({ from: date, to: undefined });
+      } else if (selectedRange.from && !selectedRange.to) {
+        // Complete range
+        const from = selectedRange.from;
+        const to = date;
+        
+        // Ensure from is before to
+        const startDate = from <= to ? from : to;
+        const endDate = from <= to ? to : from;
+        
+        // Check if range exceeds maximum days
+        const daysDiff = differenceInDays(endDate, startDate) + 1;
+        console.log('Completing range:', { from: startDate, to: endDate, daysDiff, maxRangeDays });
+        
+        if (daysDiff > maxRangeDays) {
+          // If exceeds max, start new range from clicked date
+          console.log('Range exceeds max days, starting new range');
+          onSelectRange({ from: date, to: undefined });
+        } else {
+          console.log('Range is valid, setting complete range');
+          onSelectRange({ from: startDate, to: endDate });
+        }
+      }
     }
   };
 
@@ -102,9 +194,14 @@ export function Calendar({ selected, onSelect, onClear, minDate, maxDate, classN
     const todayDate = new Date();
     const isDisabled = (minDate && todayDate < minDate) || (maxDate && todayDate > maxDate);
     if (!isDisabled) {
-      onSelect(todayDate);
+      if (mode === 'single') {
+        onSelect?.(todayDate);
+      } else if (mode === 'range' && onSelectRange) {
+        onSelectRange({ from: todayDate, to: undefined });
+      }
     }
   };
+
 
   const handleClearClick = () => {
     if (onClear) {
@@ -147,7 +244,7 @@ export function Calendar({ selected, onSelect, onClear, minDate, maxDate, classN
       {/* Calendar grid */}
       <div className="grid grid-cols-7 gap-1">
         {calendarDays.map((calendarDay, index) => {
-          const { date, day, isCurrentMonth, isToday, isSelected, isDisabled } = calendarDay;
+          const { date, day, isCurrentMonth, isToday, isSelected, isDisabled, inRange, isRangeStart, isRangeEnd } = calendarDay;
           
           return (
             <button
@@ -156,12 +253,19 @@ export function Calendar({ selected, onSelect, onClear, minDate, maxDate, classN
               disabled={isDisabled}
               type="button"
               className={`
-                h-8 w-8 text-sm rounded-md transition-colors
+                h-8 w-8 text-sm transition-colors relative
                 ${isCurrentMonth ? 'text-gray-900' : 'text-gray-400'}
-                ${isToday ? 'bg-blue-100 text-blue-900 font-semibold' : ''}
-                ${isSelected ? 'bg-blue-600 text-white font-semibold' : ''}
-                ${isDisabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-gray-100'}
-                ${!isSelected && !isToday && !isDisabled ? 'hover:bg-gray-100' : ''}
+                ${isToday && !isSelected && !isRangeStart && !isRangeEnd && !inRange ? 'bg-blue-100 text-blue-900 font-semibold rounded-md' : ''}
+                ${isSelected ? 'bg-blue-600 text-white font-semibold rounded-md' : ''}
+                ${isRangeStart && !isRangeEnd ? 'bg-blue-600 text-white font-semibold rounded-md' : ''}
+                ${isRangeStart && isRangeEnd ? 'bg-blue-600 text-white font-semibold rounded-md' : ''}
+                ${isRangeStart && !isRangeEnd && selectedRange?.to ? 'bg-blue-600 text-white font-semibold rounded-l-md' : ''}
+                ${isRangeEnd && !isRangeStart ? 'bg-blue-600 text-white font-semibold rounded-r-md' : ''}
+                ${inRange && !isRangeStart && !isRangeEnd ? 'bg-blue-200 text-blue-900 font-medium' : ''}
+                ${isDisabled ? 'cursor-not-allowed opacity-50' : ''}
+                ${!isSelected && !isToday && !isDisabled && !inRange && !isRangeStart && !isRangeEnd ? 'hover:bg-gray-100 rounded-md' : ''}
+                ${inRange && !isRangeStart && !isRangeEnd ? 'rounded-none' : ''}
+                ${!inRange && !isSelected && !isToday && !isRangeStart && !isRangeEnd ? 'rounded-md' : ''}
               `}
             >
               {day}

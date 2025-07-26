@@ -23,6 +23,23 @@ interface AttendanceMatrixSectionProps {
    * @default true
    */
   showUserNames?: boolean;
+  
+  /**
+   * Whether to show export button
+   * @default false
+   */
+  canExport?: boolean;
+  
+  /**
+   * User role for export functionality
+   * @default 'worker'
+   */
+  userRole?: 'worker' | 'admin' | 'superadmin';
+  
+  /**
+   * Custom export handler
+   */
+  onExport?: () => void;
 }
 
 /**
@@ -46,7 +63,10 @@ export function AttendanceMatrixSection({
   attendanceData,
   selectedDate,
   viewType,
-  showUserNames = true
+  showUserNames = true,
+  canExport = false,
+  userRole = 'worker',
+  onExport
 }: AttendanceMatrixSectionProps) {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -86,6 +106,9 @@ export function AttendanceMatrixSection({
         viewType={viewType}
         selectedDate={selectedDate}
         showUserNames={showUserNames}
+        canExport={canExport}
+        userRole={userRole}
+        onExport={onExport}
       />
     </div>
   );
