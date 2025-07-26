@@ -1,10 +1,16 @@
 [build]
-command = "npm ci && npm run build"
+command = "npm ci && npx prisma generate && npm run build"
 publish = "build/client"
 
 [build.environment]
 NODE_ENV = "production"
 NPM_FLAGS = "--include=dev"
+
+# Environment variables for production
+[context.production.environment]
+DATABASE_URL = "postgresql://postgres.ldqsrxeobvcqwkyltzwf:lQ4uG9CZgcGmHJBi@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+JWT_SECRET = "your-secret-key-here-change-in-production"
+SESSION_SECRET = "your-session-secret-here-change-in-production"
 
 [dev]
 command = "npm run dev"
