@@ -87,7 +87,10 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
 
-    return redirect("/attendance");
+    return Response.json({
+      success: true,
+      message: "Check-out Successful"
+    }, { status: 200 });
   } catch (error) {
     console.error("Check-out error:", error);
     // For any other error, return a JSON error response

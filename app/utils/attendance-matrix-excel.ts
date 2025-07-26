@@ -122,9 +122,9 @@ export async function exportAttendanceMatrixToExcel({
 
     dateRange.forEach((date, index) => {
       columns.push({
-        header: format(date, 'EEE\nMMM d'),
+        header: format(date, 'EEEE (MMM d)'),
         key: `date_${index}`,
-        width: 12
+        width: 15
       });
     });
 
@@ -227,12 +227,11 @@ export async function exportAttendanceMatrixToExcel({
 
     // Legend items
     const legendItems = [
-      { status: ATTENDANCE_STATUS.MORNING_SHIFT, description: 'Morning Shift (6:00 AM - 2:00 PM)' },
-      { status: ATTENDANCE_STATUS.AFTERNOON_SHIFT, description: 'Afternoon Shift (2:00 PM - 10:00 PM)' },
+      { status: ATTENDANCE_STATUS.MORNING_SHIFT, description: 'Morning Shift (8:00 AM - 5:00 PM)' },
+      { status: ATTENDANCE_STATUS.AFTERNOON_SHIFT, description: 'Afternoon Shift (1:00 PM - 10:00 PM)' },
       { status: ATTENDANCE_STATUS.NIGHT_SHIFT, description: 'Night Shift (10:00 PM - 6:00 AM)' },
-      { status: ATTENDANCE_STATUS.OFF_DAY, description: 'Scheduled Off Day' },
-      { status: ATTENDANCE_STATUS.ABSENT, description: 'Absent (No Check-in)' },
-      { status: ATTENDANCE_STATUS.PRESENT, description: 'Present (General)' }
+      { status: ATTENDANCE_STATUS.OFF_DAY, description: 'Off Day' },
+      { status: ATTENDANCE_STATUS.ABSENT, description: 'Absent (No Check-in)' }
     ];
 
     legendItems.forEach((item, index) => {

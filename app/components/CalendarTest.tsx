@@ -2,7 +2,7 @@ import { useState } from "react";
 import { DateRangeSelector, type ViewType } from "~/components/DateRangeSelector";
 import { AttendanceMatrix } from "~/components/AttendanceMatrix";
 import type { DateRange } from "~/components/ui/calendar";
-import { format } from "date-fns";
+import { format, differenceInDays } from "date-fns";
 
 // Mock attendance data for testing
 const mockAttendanceData = [
@@ -120,14 +120,47 @@ export function CalendarTest() {
 
       {/* Instructions */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <h3 className="text-lg font-medium text-gray-900 mb-2">How to Test</h3>
+        <h3 className="text-lg font-medium text-gray-900 mb-2">How to Test Enhanced Date Selection</h3>
         <div className="space-y-2 text-sm text-gray-700">
           <div><strong>Daily Selection:</strong> Select "Daily" view and click on any date in the calendar.</div>
-          <div><strong>Range Selection:</strong> Select "Range" view, click a start date, then click an end date.</div>
-          <div><strong>Maximum Range:</strong> Try selecting a range longer than 31 days - it should reset to start a new range.</div>
-          <div><strong>Navigation:</strong> Use the arrow buttons to navigate between dates/ranges.</div>
+          <div><strong>Weekly Selection:</strong> Select "Weekly" view and click on any date - it will create a 7-day range starting from that date.</div>
+          <div><strong>Monthly Selection:</strong> Select "Monthly" view and click on any date - it will create a range based on actual month length (28-31 days).</div>
+          <div><strong>Range Selection:</strong> Select "Range" view, click a start date, then click an end date (max 31 days).</div>
+          <div><strong>Maximum Range Limit:</strong> Try selecting a range longer than 31 days - it should be truncated to 31 days with an alert.</div>
+          <div><strong>Auto-Sync Dropdown:</strong> In "Range" mode, select exactly 7 days - dropdown should auto-switch to "Weekly". Select 28-31 days - should auto-switch to "Monthly".</div>
+          <div><strong>Navigation:</strong> Use the arrow buttons to navigate between dates/ranges while maintaining the custom start day.</div>
+          <div><strong>Today Button:</strong> Click "Today" to jump to current date with appropriate range for the selected view type.</div>
+          <div><strong>Month Length Handling:</strong> Test monthly selection on different months (February, April, etc.) to see variable month lengths.</div>
         </div>
       </div>
+
+      {/* Range Information */}
+      {(selectedRange.from || selectedRange.to) && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <h3 className="text-lg font-medium text-green-900 mb-2">Range Details</h3>
+          <div className="space-y-2 text-sm text-green-800">
+            {selectedRange.from && (
+              <div><strong>Start Date:</strong> {format(selectedRange.from, 'EEEE, MMMM d, yyyy')}</div>
+            )}
+            {selectedRange.to && (
+              <div><strong>End Date:</strong> {format(selectedRange.to, 'EEEE, MMMM d, yyyy')}</div>
+            )}
+            {selectedRange.from && selectedRange.to && (
+              <>
+                <div><strong>Duration:</strong> {differenceInDays(selectedRange.to, selectedRange.from) + 1} days</div>
+                <div><strong>Pattern Detection:</strong> {
+                  (() => {
+                    const days = differenceInDays(selectedRange.to, selectedRange.from) + 1;
+                    if (days === 7) return "Weekly pattern (7 days)";
+                    if (days >= 28 && days <= 31) return "Monthly pattern (28-31 days)";
+                    return "Custom range";
+                  })()
+                }</div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Attendance Matrix */}
       <AttendanceMatrix

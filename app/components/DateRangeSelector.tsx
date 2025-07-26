@@ -1,4 +1,4 @@
-import { format, addDays, subDays, addWeeks, subWeeks, addMonths, subMonths, differenceInDays } from "date-fns";
+import { format, addDays, subDays, addWeeks, subWeeks, addMonths, subMonths, differenceInDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, getDaysInMonth } from "date-fns";
 import { ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
@@ -6,6 +6,9 @@ import { Calendar as CalendarComponent, type DateRange } from "~/components/ui/c
 import { useState, useRef, useEffect } from "react";
 
 export type ViewType = 'daily' | 'weekly' | 'monthly' | 'range';
+
+// Maximum allowed range in days (1 month)
+const MAX_RANGE_DAYS = 31;
 
 interface DateRangeSelectorProps {
   selectedDate: Date;
@@ -44,16 +47,97 @@ export function DateRangeSelector({
     };
   }, [showCalendar]);
   
+  // Helper function to create weekly range starting from any selected day
+  const createWeeklyRange = (startDate: Date): DateRange => {
+    const endDate = addDays(startDate, 6); // 7 days total
+    return { from: startDate, to: endDate };
+  };
+
+  // Helper function to create monthly range starting from any selected day
+  const createMonthlyRange = (startDate: Date): DateRange => {
+    // Get the actual number of days in the month starting from the selected date
+    const year = startDate.getFullYear();
+    const month = startDate.getMonth();
+    const daysInMonth = getDaysInMonth(new Date(year, month));
+    
+    // Calculate how many days from start date to end of month
+    const dayOfMonth = startDate.getDate();
+    const remainingDaysInMonth = daysInMonth - dayOfMonth;
+    
+    // If we have enough days in current month for 31 days, use that
+    // Otherwise, extend into next month to reach approximately 30-31 days
+    let endDate: Date;
+    if (remainingDaysInMonth >= 30) {
+      endDate = addDays(startDate, 30); // 31 days total
+    } else {
+      // Extend to get close to a full month (28-31 days based on actual month)
+      const targetDays = Math.min(daysInMonth - 1, 30); // Don't exceed 31 days total
+      endDate = addDays(startDate, targetDays);
+    }
+    
+    return { from: startDate, to: endDate };
+  };
+
+  // Helper function to validate range doesn't exceed maximum
+  const validateRange = (range: DateRange): { range: DateRange; wasTruncated: boolean } => {
+    if (!range.from || !range.to) return { range, wasTruncated: false };
+    
+    const daysDiff = differenceInDays(range.to, range.from) + 1;
+    if (daysDiff > MAX_RANGE_DAYS) {
+      // Truncate to maximum allowed days
+      const newTo = addDays(range.from, MAX_RANGE_DAYS - 1);
+      return {
+        range: { from: range.from, to: newTo },
+        wasTruncated: true
+      };
+    }
+    return { range, wasTruncated: false };
+  };
+
+  // Helper function to detect range pattern and suggest appropriate view type
+  const detectRangePattern = (range: DateRange): ViewType | null => {
+    if (!range.from || !range.to) return null;
+    
+    const daysDiff = differenceInDays(range.to, range.from) + 1;
+    
+    // Check for weekly pattern (exactly 7 days)
+    if (daysDiff === 7) {
+      return 'weekly';
+    }
+    
+    // Check for monthly pattern (28-31 days)
+    if (daysDiff >= 28 && daysDiff <= 31) {
+      return 'monthly';
+    }
+    
+    return null;
+  };
+  
   const navigatePrevious = () => {
     switch (viewType) {
       case 'daily':
         onDateChange(subDays(selectedDate, 1));
         break;
       case 'weekly':
-        onDateChange(subWeeks(selectedDate, 1));
+        // For weekly view, move by 7 days but maintain the custom start day
+        if (selectedRange?.from) {
+          const newRange = createWeeklyRange(subDays(selectedRange.from, 7));
+          onDateRangeChange?.(newRange);
+        } else {
+          // Fallback to traditional week navigation
+          onDateChange(subWeeks(selectedDate, 1));
+        }
         break;
       case 'monthly':
-        onDateChange(subMonths(selectedDate, 1));
+        // For monthly view, move by one month but maintain the custom start day
+        if (selectedRange?.from) {
+          const prevMonth = subMonths(selectedRange.from, 1);
+          const newRange = createMonthlyRange(prevMonth);
+          onDateRangeChange?.(newRange);
+        } else {
+          // Fallback to traditional month navigation
+          onDateChange(subMonths(selectedDate, 1));
+        }
         break;
       case 'range':
         if (selectedRange?.from) {
@@ -74,10 +158,25 @@ export function DateRangeSelector({
         onDateChange(addDays(selectedDate, 1));
         break;
       case 'weekly':
-        onDateChange(addWeeks(selectedDate, 1));
+        // For weekly view, move by 7 days but maintain the custom start day
+        if (selectedRange?.from) {
+          const newRange = createWeeklyRange(addDays(selectedRange.from, 7));
+          onDateRangeChange?.(newRange);
+        } else {
+          // Fallback to traditional week navigation
+          onDateChange(addWeeks(selectedDate, 1));
+        }
         break;
       case 'monthly':
-        onDateChange(addMonths(selectedDate, 1));
+        // For monthly view, move by one month but maintain the custom start day
+        if (selectedRange?.from) {
+          const nextMonth = addMonths(selectedRange.from, 1);
+          const newRange = createMonthlyRange(nextMonth);
+          onDateRangeChange?.(newRange);
+        } else {
+          // Fallback to traditional month navigation
+          onDateChange(addMonths(selectedDate, 1));
+        }
         break;
       case 'range':
         if (selectedRange?.from) {
@@ -93,23 +192,72 @@ export function DateRangeSelector({
   };
 
   const goToToday = () => {
-    if (viewType === 'range') {
-      onDateRangeChange?.({ from: new Date(), to: undefined });
-    } else {
-      onDateChange(new Date());
-      onViewTypeChange('daily');
+    const today = new Date();
+    
+    switch (viewType) {
+      case 'daily':
+        onDateChange(today);
+        break;
+      case 'weekly':
+        // Create weekly range starting from today
+        const weeklyRange = createWeeklyRange(today);
+        onDateRangeChange?.(weeklyRange);
+        break;
+      case 'monthly':
+        // Create monthly range starting from today
+        const monthlyRange = createMonthlyRange(today);
+        onDateRangeChange?.(monthlyRange);
+        break;
+      case 'range':
+        onDateRangeChange?.({ from: today, to: undefined });
+        break;
+      default:
+        onDateChange(today);
+        break;
     }
   };
 
   const handleCalendarDateSelect = (date: Date) => {
-    onDateChange(date);
+    // When a single date is selected, automatically create appropriate range based on view type
+    switch (viewType) {
+      case 'weekly':
+        const weeklyRange = createWeeklyRange(date);
+        onDateRangeChange?.(weeklyRange);
+        break;
+      case 'monthly':
+        const monthlyRange = createMonthlyRange(date);
+        onDateRangeChange?.(monthlyRange);
+        break;
+      default:
+        onDateChange(date);
+        break;
+    }
     setShowCalendar(false);
   };
 
   const handleCalendarRangeSelect = (range: DateRange) => {
     console.log('DateRangeSelector received range:', range);
-    onDateRangeChange?.(range);
-    if (range.from && range.to) {
+    
+    // Validate and potentially truncate the range
+    const { range: validatedRange, wasTruncated } = validateRange(range);
+    
+    // Show warning if range was truncated
+    if (wasTruncated) {
+      console.warn(`Range truncated to maximum ${MAX_RANGE_DAYS} days`);
+      // You could show a toast notification here if you have a toast system
+      alert(`Date range was limited to maximum ${MAX_RANGE_DAYS} consecutive days.`);
+    }
+    
+    // Detect if the selected range matches a pattern and suggest view type change
+    const detectedPattern = detectRangePattern(validatedRange);
+    if (detectedPattern && detectedPattern !== viewType) {
+      // Auto-sync dropdown to match the selected range pattern
+      console.log(`Auto-switching to ${detectedPattern} view based on selected range`);
+      onViewTypeChange(detectedPattern);
+    }
+    
+    onDateRangeChange?.(validatedRange);
+    if (validatedRange.from && validatedRange.to) {
       setShowCalendar(false);
     }
   };
@@ -123,19 +271,47 @@ export function DateRangeSelector({
       case 'daily':
         return format(selectedDate, 'EEEE, MMMM d, yyyy');
       case 'weekly':
-        const weekStart = subDays(selectedDate, selectedDate.getDay() === 0 ? 6 : selectedDate.getDay() - 1);
-        const weekEnd = addDays(weekStart, 6);
-        return `${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d, yyyy')}`;
+        // Show custom weekly range if available, otherwise traditional week
+        if (selectedRange?.from && selectedRange?.to) {
+          const sameYear = selectedRange.from.getFullYear() === selectedRange.to.getFullYear();
+          const dayCount = differenceInDays(selectedRange.to, selectedRange.from) + 1;
+          const prefix = dayCount === 7 ? 'Week: ' : `${dayCount} days: `;
+          if (sameYear) {
+            return `${prefix}${format(selectedRange.from, 'MMM d')} – ${format(selectedRange.to, 'MMM d, yyyy')}`;
+          } else {
+            return `${prefix}${format(selectedRange.from, 'MMM d, yyyy')} – ${format(selectedRange.to, 'MMM d, yyyy')}`;
+          }
+        } else {
+          // Fallback to traditional week display
+          const weekStart = subDays(selectedDate, selectedDate.getDay() === 0 ? 6 : selectedDate.getDay() - 1);
+          const weekEnd = addDays(weekStart, 6);
+          return `Week: ${format(weekStart, 'MMM d')} – ${format(weekEnd, 'MMM d, yyyy')}`;
+        }
       case 'monthly':
-        return format(selectedDate, 'MMMM yyyy');
+        // Show custom monthly range if available, otherwise traditional month
+        if (selectedRange?.from && selectedRange?.to) {
+          const sameYear = selectedRange.from.getFullYear() === selectedRange.to.getFullYear();
+          const dayCount = differenceInDays(selectedRange.to, selectedRange.from) + 1;
+          const prefix = dayCount >= 28 && dayCount <= 31 ? 'Month: ' : `${dayCount} days: `;
+          if (sameYear) {
+            return `${prefix}${format(selectedRange.from, 'MMM d')} – ${format(selectedRange.to, 'MMM d, yyyy')}`;
+          } else {
+            return `${prefix}${format(selectedRange.from, 'MMM d, yyyy')} – ${format(selectedRange.to, 'MMM d, yyyy')}`;
+          }
+        } else {
+          // Fallback to traditional month display
+          return `Month: ${format(selectedDate, 'MMMM yyyy')}`;
+        }
       case 'range':
         if (selectedRange?.from && selectedRange?.to) {
           // Check if both dates are in the same year
           const sameYear = selectedRange.from.getFullYear() === selectedRange.to.getFullYear();
+          const dayCount = differenceInDays(selectedRange.to, selectedRange.from) + 1;
+          const prefix = `Range (${dayCount} days): `;
           if (sameYear) {
-            return `${format(selectedRange.from, 'MMM d')} – ${format(selectedRange.to, 'MMM d, yyyy')}`;
+            return `${prefix}${format(selectedRange.from, 'MMM d')} – ${format(selectedRange.to, 'MMM d, yyyy')}`;
           } else {
-            return `${format(selectedRange.from, 'MMM d, yyyy')} – ${format(selectedRange.to, 'MMM d, yyyy')}`;
+            return `${prefix}${format(selectedRange.from, 'MMM d, yyyy')} – ${format(selectedRange.to, 'MMM d, yyyy')}`;
           }
         } else if (selectedRange?.from) {
           return `${format(selectedRange.from, 'MMM d, yyyy')} – Select end date`;
@@ -190,12 +366,12 @@ export function DateRangeSelector({
             {showCalendar && (
               <div className="absolute top-full left-0 mt-2 z-50 w-80">
                 <CalendarComponent
-                  mode={viewType === 'range' ? 'range' : 'single'}
-                  selected={viewType !== 'range' ? selectedDate : undefined}
-                  selectedRange={viewType === 'range' ? selectedRange : undefined}
-                  onSelect={viewType !== 'range' ? handleCalendarDateSelect : undefined}
-                  onSelectRange={viewType === 'range' ? handleCalendarRangeSelect : undefined}
-                  maxRangeDays={31}
+                  mode={viewType === 'range' || viewType === 'weekly' || viewType === 'monthly' ? 'range' : 'single'}
+                  selected={viewType === 'daily' ? selectedDate : undefined}
+                  selectedRange={viewType !== 'daily' ? selectedRange : undefined}
+                  onSelect={viewType === 'daily' ? handleCalendarDateSelect : handleCalendarDateSelect}
+                  onSelectRange={viewType !== 'daily' ? handleCalendarRangeSelect : undefined}
+                  maxRangeDays={MAX_RANGE_DAYS}
                   showClear={false}
                   className="w-full"
                 />

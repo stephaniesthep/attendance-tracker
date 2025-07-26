@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useLoaderData, useFetcher, useRevalidator } from "react-router";
+import { useLoaderData, useFetcher, useRevalidator, Link } from "react-router";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { redirect } from "react-router";
 import { requireUser } from "~/utils/session.server";
@@ -87,10 +87,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const user = await requireUser(request);
     const today = format(new Date(), 'yyyy-MM-dd');
     
+    // Find the latest attendance record for today that doesn't have a check-out
+    // This allows multiple check-ins and check-outs in the same day
     const todayAttendance = await prisma.attendance.findFirst({
       where: {
         userId: user.id,
         date: today,
+        checkOut: null, // Only get records that haven't been checked out
+      },
+      orderBy: {
+        checkIn: 'desc', // Get the most recent check-in
       },
     });
 
@@ -126,6 +132,7 @@ export default function Attendance() {
   const [gpsAccuracy, setGpsAccuracy] = useState<string>('');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+  const [showSuccessScreen, setShowSuccessScreen] = useState<{ type: 'checkin' | 'checkout', message: string } | null>(null);
   const [selectedShift, setSelectedShift] = useState<string>('morning');
   const [showOffDayModal, setShowOffDayModal] = useState(false);
   const [offDayEndDate, setOffDayEndDate] = useState<string>('');
@@ -211,42 +218,53 @@ export default function Attendance() {
         ctx.drawImage(img, -img.width, 0);
         ctx.restore();
 
-        // Add overlay background
-        const overlayHeight = 140;
+        // Add overlay background - limit to 1/3 of image height
+        const overlayHeight = Math.floor(canvas.height / 3);
         const gradient = ctx.createLinearGradient(0, canvas.height - overlayHeight, 0, canvas.height);
         gradient.addColorStop(0, 'rgba(0, 0, 0, 0.7)');
         gradient.addColorStop(1, 'rgba(0, 0, 0, 0.9)');
         ctx.fillStyle = gradient;
         ctx.fillRect(0, canvas.height - overlayHeight, canvas.width, overlayHeight);
 
-        // Set text properties
+        // Set text properties - increase text size by 2pt
         ctx.fillStyle = 'white';
         ctx.font = 'bold 14px Arial';
         ctx.textAlign = 'left';
 
-        // Add timestamp and action type
+        // Add timestamp and action type with prominent action widget
         const now = new Date();
         const dateStr = format(now, 'dd/MM/yyyy');
         const timeStr = format(now, 'HH:mm:ss');
         const actionType = !todayAttendance ? 'CHECK-IN' : 'CHECK-OUT';
         
-        ctx.fillText(`Date: ${dateStr}`, 20, canvas.height - 100);
-        ctx.fillText(`Time: ${timeStr}`, 20, canvas.height - 82);
-        ctx.fillText(`Action: ${actionType}`, 20, canvas.height - 64);
+        // Draw prominent action widget background - increase text size by 2pt
+        const actionColor = !todayAttendance ? '#16a34a' : '#dc2626'; // green for check-in, red for check-out
+        ctx.font = 'bold 14px Arial';
+        const actionWidth = ctx.measureText(actionType).width + 12; // Add padding
+        ctx.fillStyle = actionColor;
+        ctx.fillRect(15, canvas.height - overlayHeight + 15, actionWidth, 20);
+        ctx.fillStyle = 'white';
+        ctx.fillText(actionType, 21, canvas.height - overlayHeight + 28);
+        
+        // Reset to white for other text with better spacing
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 14px Arial';
+        ctx.fillText(`Date: ${dateStr}`, 15, canvas.height - overlayHeight + 52);
+        ctx.fillText(`Time: ${timeStr}`, 15, canvas.height - overlayHeight + 67);
 
         // Add location - prioritize enhanced location name
         const locationToShow = locationName || (location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : 'Location unavailable');
         
         if (locationToShow) {
-          ctx.font = 'bold 12px Arial';
-          const maxWidth = canvas.width - 40;
+          ctx.font = 'bold 13px Arial';
+          const maxWidth = canvas.width - 30;
           
-          // Don't truncate - let it wrap naturally
+          // Better spacing for location text within 1/3 overlay
           const words = locationToShow.split(' ');
           let line = '';
-          let y = canvas.height - 46;
+          let y = canvas.height - overlayHeight + 87;
           
-          ctx.fillText('Location:', 20, y);
+          ctx.fillText('Location:', 15, y);
           y += 14;
           
           for (let n = 0; n < words.length; n++) {
@@ -255,17 +273,17 @@ export default function Attendance() {
             const testWidth = metrics.width;
             
             if (testWidth > maxWidth && n > 0) {
-              ctx.fillText(line.trim(), 20, y);
+              ctx.fillText(line.trim(), 15, y);
               line = words[n] + ' ';
               y += 12;
-              // Allow up to 3 lines for location to maximize space usage
-              if (y > canvas.height - 4) break;
+              // Ensure we stay within the overlay bounds
+              if (y > canvas.height - 15) break;
             } else {
               line = testLine;
             }
           }
-          if (line.trim() && y <= canvas.height - 4) {
-            ctx.fillText(line.trim(), 20, y);
+          if (line.trim() && y <= canvas.height - 15) {
+            ctx.fillText(line.trim(), 15, y);
           }
         }
 
@@ -357,62 +375,90 @@ export default function Attendance() {
 
   // Handle fetcher responses
   useEffect(() => {
-    // Handle errors - when fetcher has an error or returns error data
-    if (fetcher.state === "idle") {
-      if (fetcher.data && typeof fetcher.data === 'object' && 'error' in fetcher.data) {
-        // Handle structured error response
-        setSubmitError(fetcher.data.error as string);
-        // If the error is about already being checked in, revalidate to get current status
-        if ((fetcher.data.error as string).includes('already checked in')) {
+    if (fetcher.state === "idle" && fetcher.data) {
+      if (typeof fetcher.data === 'object') {
+        // Handle error responses
+        if ('error' in fetcher.data) {
+          setSubmitError(fetcher.data.error as string);
+          setShowSuccessScreen(null);
+          // If the error is about already being checked in, revalidate to get current status
+          if ((fetcher.data.error as string).includes('already checked in')) {
+            revalidator.revalidate();
+          }
+        }
+        // Handle success responses
+        else if ('success' in fetcher.data && fetcher.data.success) {
+          setSubmitError(null);
+          const message = fetcher.data.message as string;
+          const actionType = message.includes('Check-in') ? 'checkin' : 'checkout';
+          setShowSuccessScreen({ type: actionType, message });
+          
+          // Revalidate the loader data to get updated attendance status
           revalidator.revalidate();
+          
+          // Clear captured image and reset camera state
+          setCapturedImage(null);
+          setShowCamera(false);
         }
       }
     }
   }, [fetcher.state, fetcher.data, revalidator]);
-
-  // Handle successful redirects (when fetcher completes and we're back on attendance page)
-  useEffect(() => {
-    // Check if we just completed a submission and are back on the attendance page
-    if (fetcher.state === "idle" &&
-        fetcher.data === null &&
-        window.location.pathname === '/attendance' &&
-        capturedImage &&
-        !submitError &&
-        !submitSuccess) {
-      
-      // We had a successful submission, show success message and revalidate
-      const lastAction = fetcher.formData?.get('action');
-      if (lastAction === 'checkin') {
-        setSubmitSuccess("Successfully checked in!");
-      } else if (lastAction === 'checkout') {
-        setSubmitSuccess("Successfully checked out!");
-      }
-      
-      // Clear success message after 3 seconds
-      setTimeout(() => setSubmitSuccess(null), 3000);
-      
-      // Revalidate the loader data to get updated attendance status
-      revalidator.revalidate();
-    }
-  }, [fetcher.state, fetcher.data, fetcher.formData, capturedImage, submitError, submitSuccess, revalidator]);
 
   // Handle fetcher errors (network errors, etc.)
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data === undefined) {
       // This might indicate a network error or server error
       const lastSubmission = fetcher.formData;
-      if (lastSubmission && (submitError === null && submitSuccess === null)) {
+      if (lastSubmission && (submitError === null && !showSuccessScreen)) {
         setSubmitError("Network error occurred. Please try again.");
       }
     }
-  }, [fetcher.state, fetcher.data, submitError, submitSuccess]);
+  }, [fetcher.state, fetcher.data, submitError, showSuccessScreen]);
 
   // Clear errors when starting new capture
   const startCaptureWithErrorClear = async () => {
     setSubmitError(null);
     setSubmitSuccess(null);
+    setShowSuccessScreen(null);
     await startCapture();
   };
+
+  // Show success screen if check-in/check-out was successful
+  if (showSuccessScreen) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Attendance</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Check in and out with your photo and location
+          </p>
+        </div>
+
+        <div className="bg-white shadow sm:rounded-lg">
+          <div className="px-4 py-5 sm:p-6">
+            <div className="text-center py-12">
+              <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-4" />
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                {showSuccessScreen.message}
+              </h2>
+              <p className="text-gray-600 mb-8">
+                {showSuccessScreen.type === 'checkin'
+                  ? 'You have successfully checked in for today. You can now return to the dashboard.'
+                  : 'You have successfully checked out for today. You can now return to the dashboard.'
+                }
+              </p>
+              <Link
+                to="/dashboard"
+                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Return to Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -435,10 +481,8 @@ export default function Attendance() {
                     {activeOffDay
                       ? `You are on off day until ${format(new Date(activeOffDay.endDate), 'dd/MM/yyyy')}`
                       : todayAttendance
-                      ? todayAttendance.checkOut
-                        ? "You have completed your attendance for today"
-                        : "You are checked in"
-                      : "You have not checked in yet"}
+                      ? "You are currently checked in"
+                      : "You are not checked in"}
                   </p>
                   {todayAttendance?.shift && (
                     <p className="mt-1 text-xs text-gray-500">
@@ -710,34 +754,43 @@ export default function Attendance() {
 
             {/* Camera Section */}
             {showCamera ? (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <div className="camera-container rounded-lg overflow-hidden bg-black">
                   <Webcam
                     ref={webcamRef}
                     screenshotFormat="image/jpeg"
                     className="transform scale-x-[-1]"
                     videoConstraints={{
-                      width: { ideal: 720 },
-                      height: { ideal: 1280 },
+                      width: { ideal: 640 },
+                      height: { ideal: 640 },
                       facingMode: "user",
-                      aspectRatio: 9/16
+                      aspectRatio: 1
                     }}
                   />
-                  {/* Live overlay preview */}
+                  {/* Live overlay preview - match captured image overlay exactly */}
                   <div className="camera-overlay">
-                    <div className="text-xs space-y-1">
-                      <div>Date: {format(new Date(), 'dd/MM/yyyy')}</div>
-                      <div>Time: {format(new Date(), 'HH:mm:ss')}</div>
-                      <div>Action: {!todayAttendance ? 'CHECK-IN' : 'CHECK-OUT'}</div>
-                      {locationName && (
-                        <div className="text-xs">
-                          Location: {locationName}
-                        </div>
-                      )}
+                    <div className="space-y-1">
+                      {/* Prominent Action Widget - match captured image style with increased text size */}
+                      <div className={`inline-flex items-center px-2 py-1 text-xs font-bold ${
+                        !todayAttendance
+                          ? 'bg-green-600 text-white'
+                          : 'bg-red-600 text-white'
+                      }`} style={{ fontSize: '14px' }}>
+                        {!todayAttendance ? 'CHECK-IN' : 'CHECK-OUT'}
+                      </div>
+                      <div className="space-y-1" style={{ fontSize: '14px' }}>
+                        <div>Date: {format(new Date(), 'dd/MM/yyyy')}</div>
+                        <div>Time: {format(new Date(), 'HH:mm:ss')}</div>
+                        {locationName && (
+                          <div style={{ fontSize: '13px' }}>
+                            Location: {locationName}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="flex justify-center space-x-4">
+                <div className="flex justify-center space-x-4 mt-8">
                   <button
                     onClick={capture}
                     className="mobile-button inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"

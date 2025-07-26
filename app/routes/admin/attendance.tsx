@@ -41,6 +41,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const dateParam = url.searchParams.get("date");
   const date = dateParam ? dateParam : format(new Date(), 'yyyy-MM-dd');
   
+  // Get all attendances for the date
   const attendances = await prisma.attendance.findMany({
     where: {
       date: date,
@@ -58,7 +59,37 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
   });
 
-  const records: AttendanceRecord[] = await Promise.all(
+  // Get all users who have off days on this date
+  const selectedDate = new Date(date);
+  const offDayUsers = await prisma.user.findMany({
+    where: {
+      offDays: {
+        some: {
+          startDate: {
+            lte: selectedDate,
+          },
+          endDate: {
+            gte: selectedDate,
+          },
+        },
+      },
+    },
+    include: {
+      offDays: {
+        where: {
+          startDate: {
+            lte: selectedDate,
+          },
+          endDate: {
+            gte: selectedDate,
+          },
+        },
+      },
+    },
+  });
+
+  // Create records for actual attendances
+  const attendanceRecords: AttendanceRecord[] = await Promise.all(
     attendances.map(async (attendance) => {
       // Calculate duration if both check-in and check-out exist
       let duration = null;
@@ -123,7 +154,33 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
   );
 
-  return { records, currentDate: date };
+  // Create records for off day users
+  const offDayRecords: AttendanceRecord[] = await Promise.all(
+    offDayUsers.map(async (user) => {
+      // Generate location names - off days don't have locations, so we'll use empty strings
+      return {
+        id: `off-day-${user.id}-${date}`, // Create a unique ID for off day records
+        userName: user.name,
+        userDivision: user.department || "No Division",
+        date: date,
+        shift: "Off Day", // Show "Off Day" in the Shift field
+        checkInTime: "-", // Show "-" in the Check-in field
+        checkOutTime: null,
+        duration: null,
+        checkInLocation: "",
+        checkInLocationName: null,
+        checkOutLocation: null,
+        checkOutLocationName: null,
+        checkInPhoto: "",
+        checkOutPhoto: null,
+      };
+    })
+  );
+
+  // Combine attendance records and off day records
+  const allRecords = [...attendanceRecords, ...offDayRecords];
+
+  return { records: allRecords, currentDate: date };
 }
 
 // Function to determine shift based on check-in time
@@ -195,12 +252,18 @@ export default function AdminAttendance() {
       header: "Shift",
       cell: (info) => {
         const shift = info.getValue();
+        const row = info.row.original;
+        
+        // Handle off day records
+        if (row.checkInTime === "-" && shift === "Off Day") {
+          return "Off Day";
+        }
+        
         // If shift is available from database, use it; otherwise calculate from check-in time
         if (shift) {
           return shift.charAt(0).toUpperCase() + shift.slice(1);
         }
         // Fallback to calculated shift for backward compatibility
-        const row = info.row.original;
         return getShift(row.checkInTime);
       },
     }),
@@ -235,6 +298,11 @@ export default function AdminAttendance() {
       cell: (info) => {
         const locationName = info.getValue();
         const row = info.row.original;
+        
+        // Handle off day records
+        if (row.checkInTime === "-" && row.shift === "Off Day") {
+          return "-";
+        }
         
         // Always prioritize human-readable location name
         if (locationName && locationName.trim() !== '') {
@@ -285,6 +353,16 @@ export default function AdminAttendance() {
       cell: (info) => {
         const photo = info.getValue();
         const row = info.row.original;
+        
+        // Handle off day records
+        if (row.checkInTime === "-" && row.shift === "Off Day") {
+          return (
+            <div className="flex justify-center">
+              <span className="text-sm text-gray-500">-</span>
+            </div>
+          );
+        }
+        
         return (
           <div className="flex justify-center">
             <img
@@ -386,62 +464,6 @@ export default function AdminAttendance() {
     getFilteredRowModel: getFilteredRowModel(),
   });
 
-  const exportToCSV = () => {
-    const headers = ["Date", "Name", "Division", "Shift", "Check In", "Check Out", "Duration", "Check-in Location", "Check-out Location", "Check-in Photo", "Check-out Photo"];
-    const rows = records.map((record) => {
-      // Prioritize human-readable names, fallback to coordinates, then to "unavailable"
-      const checkInLocation = (record.checkInLocationName && record.checkInLocationName.trim() !== '')
-        ? record.checkInLocationName
-        : (() => {
-            try {
-              const location = JSON.parse(record.checkInLocation);
-              return `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`;
-            } catch {
-              return 'Location unavailable';
-            }
-          })();
-      
-      const checkOutLocation = !record.checkOutLocation
-        ? "-"
-        : (record.checkOutLocationName && record.checkOutLocationName.trim() !== '')
-          ? record.checkOutLocationName
-          : (() => {
-              try {
-                const location = JSON.parse(record.checkOutLocation);
-                return `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`;
-              } catch {
-                return 'Location unavailable';
-              }
-            })();
-
-      return [
-        record.date,
-        record.userName,
-        record.userDivision,
-        record.shift ? record.shift.charAt(0).toUpperCase() + record.shift.slice(1) : getShift(record.checkInTime),
-        record.checkInTime,
-        record.checkOutTime || "-",
-        record.duration ? `${Math.floor(record.duration / 60)}h ${record.duration % 60}m` : "-",
-        checkInLocation,
-        checkOutLocation,
-        `http://localhost:3000/photo/${record.id}/checkin`,
-        record.checkOutPhoto ? `http://localhost:3000/photo/${record.id}/checkout` : "-",
-      ];
-    });
-
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((row) => row.map((cell) => `"${cell}"`).join(",")),
-    ].join("\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `attendance-${currentDate}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
 
   const exportToExcel = async () => {
     // Dynamic import to reduce bundle size
@@ -517,7 +539,41 @@ export default function AdminAttendance() {
       const checkInPhotoUrl = `${currentDomain}/public-photo/${record.id}/checkin`;
       const checkOutPhotoUrl = record.checkOutPhoto ? `${currentDomain}/public-photo/${record.id}/checkout` : null;
 
-      // Add row data
+      // Handle off day records differently
+      if (record.checkInTime === "-" && record.shift === "Off Day") {
+        // Add row data for off day
+        const row = worksheet.addRow({
+          date: record.date,
+          name: record.userName,
+          division: record.userDivision,
+          shift: "Off Day",
+          checkIn: "-",
+          checkOut: "-",
+          duration: "-",
+          checkInLocation: "-",
+          checkOutLocation: "-",
+          checkInPhoto: '',
+          checkOutPhoto: '',
+        });
+
+        // Set row height
+        worksheet.getRow(excelRowIndex).height = 25;
+
+        // Set "No Photo" for both photo columns
+        const checkInPhotoCell = row.getCell('checkInPhoto');
+        checkInPhotoCell.value = 'No Photo';
+        checkInPhotoCell.font = { color: { argb: 'FF999999' } };
+        checkInPhotoCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+        const checkOutPhotoCell = row.getCell('checkOutPhoto');
+        checkOutPhotoCell.value = 'No Photo';
+        checkOutPhotoCell.font = { color: { argb: 'FF999999' } };
+        checkOutPhotoCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+        continue; // Skip the rest of the processing for off day records
+      }
+
+      // Add row data for regular attendance
       const row = worksheet.addRow({
         date: record.date,
         name: record.userName,
@@ -622,13 +678,6 @@ export default function AdminAttendance() {
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${revalidator.state === "loading" ? "animate-spin" : ""}`} />
             Refresh
-          </button>
-          <button
-            onClick={exportToCSV}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Export CSV
           </button>
           <button
             onClick={exportToExcel}

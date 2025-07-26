@@ -139,15 +139,33 @@ function getDateRange(selectedDate: Date, viewType: 'daily' | 'weekly' | 'monthl
     case 'daily':
       return [selectedDate];
     case 'weekly':
-      return eachDayOfInterval({
-        start: startOfWeek(selectedDate, { weekStartsOn: 1 }), // Monday start
-        end: endOfWeek(selectedDate, { weekStartsOn: 1 })
-      });
+      // Use custom range if available, otherwise traditional week
+      if (selectedRange?.from && selectedRange?.to) {
+        return eachDayOfInterval({
+          start: selectedRange.from,
+          end: selectedRange.to
+        });
+      } else {
+        // Fallback to traditional week (Monday start)
+        return eachDayOfInterval({
+          start: startOfWeek(selectedDate, { weekStartsOn: 1 }),
+          end: endOfWeek(selectedDate, { weekStartsOn: 1 })
+        });
+      }
     case 'monthly':
-      return eachDayOfInterval({
-        start: startOfMonth(selectedDate),
-        end: endOfMonth(selectedDate)
-      });
+      // Use custom range if available, otherwise traditional month
+      if (selectedRange?.from && selectedRange?.to) {
+        return eachDayOfInterval({
+          start: selectedRange.from,
+          end: selectedRange.to
+        });
+      } else {
+        // Fallback to traditional month
+        return eachDayOfInterval({
+          start: startOfMonth(selectedDate),
+          end: endOfMonth(selectedDate)
+        });
+      }
     case 'range':
       if (selectedRange?.from && selectedRange?.to) {
         return eachDayOfInterval({
@@ -219,7 +237,7 @@ export function AttendanceMatrix({
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
               <Download className="h-4 w-4 mr-2" />
-              Export Matrix
+              Export Excel
             </button>
           )}
         </div>

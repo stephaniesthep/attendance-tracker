@@ -1,6 +1,7 @@
 import { useSearchParams } from "react-router";
 import { AttendanceMatrix, type UserAttendanceData } from "~/components/AttendanceMatrix";
 import { DateRangeSelector, type ViewType } from "~/components/DateRangeSelector";
+import type { DateRange } from "~/components/ui/calendar";
 
 interface AttendanceMatrixSectionProps {
   /**
@@ -14,7 +15,12 @@ interface AttendanceMatrixSectionProps {
   selectedDate: Date;
   
   /**
-   * Current view type (daily, weekly, monthly)
+   * Currently selected date range for range/weekly/monthly views
+   */
+  selectedRange?: DateRange;
+  
+  /**
+   * Current view type (daily, weekly, monthly, range)
    */
   viewType: ViewType;
   
@@ -62,6 +68,7 @@ interface AttendanceMatrixSectionProps {
 export function AttendanceMatrixSection({
   attendanceData,
   selectedDate,
+  selectedRange,
   viewType,
   showUserNames = true,
   canExport = false,
@@ -81,6 +88,25 @@ export function AttendanceMatrixSection({
   };
 
   /**
+   * Handle date range change from DateRangeSelector
+   * Updates URL search params to maintain state across navigation
+   */
+  const handleDateRangeChange = (range: DateRange) => {
+    const newSearchParams = new URLSearchParams(searchParams);
+    if (range.from) {
+      newSearchParams.set('rangeFrom', range.from.toISOString());
+    } else {
+      newSearchParams.delete('rangeFrom');
+    }
+    if (range.to) {
+      newSearchParams.set('rangeTo', range.to.toISOString());
+    } else {
+      newSearchParams.delete('rangeTo');
+    }
+    setSearchParams(newSearchParams);
+  };
+
+  /**
    * Handle view type change from DateRangeSelector
    * Updates URL search params to maintain state across navigation
    */
@@ -95,8 +121,10 @@ export function AttendanceMatrixSection({
       {/* Date Range Selector */}
       <DateRangeSelector
         selectedDate={selectedDate}
+        selectedRange={selectedRange}
         viewType={viewType}
         onDateChange={handleDateChange}
+        onDateRangeChange={handleDateRangeChange}
         onViewTypeChange={handleViewTypeChange}
       />
       
@@ -105,6 +133,7 @@ export function AttendanceMatrixSection({
         data={attendanceData}
         viewType={viewType}
         selectedDate={selectedDate}
+        selectedRange={selectedRange}
         showUserNames={showUserNames}
         canExport={canExport}
         userRole={userRole}

@@ -6,6 +6,8 @@ import { redirect } from "react-router";
 import bcrypt from "bcryptjs";
 import { User, Shield, Key, AlertTriangle } from "lucide-react";
 import { useState } from "react";
+import { SuperAdminDashboardStats } from "~/components/SuperAdminDashboardStats";
+import { format } from "date-fns";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const baseUser = await requireSuperAdmin(request);
@@ -22,8 +24,83 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (!user) {
     throw new Error("User not found");
   }
+
+  // Get today's date in YYYY-MM-DD format
+  const today = new Date();
+  const todayString = format(today, 'yyyy-MM-dd');
+
+  // Get dashboard statistics
+  const [totalWorkers, todayAttendances, superAdminAttendance] = await Promise.all([
+    // Total active workers (excluding superadmins)
+    prisma.user.count({
+      where: {
+        isActive: true,
+        roles: {
+          none: {
+            name: "SUPER_ADMIN"
+          }
+        }
+      }
+    }),
+    
+    // Today's attendances for all workers
+    prisma.attendance.findMany({
+      where: {
+        date: todayString,
+        user: {
+          isActive: true,
+          roles: {
+            none: {
+              name: "SUPER_ADMIN"
+            }
+          }
+        }
+      },
+      select: {
+        id: true,
+        checkIn: true,
+        checkOut: true,
+        status: true
+      }
+    }),
+    
+    // Superadmin's own attendance for today
+    prisma.attendance.findFirst({
+      where: {
+        userId: user.id,
+        date: todayString
+      },
+      select: {
+        checkIn: true,
+        checkOut: true,
+        status: true
+      }
+    })
+  ]);
+
+  // Calculate statistics
+  const workersPresent = todayAttendances.filter(att => att.status === 'present').length;
+  const currentlyIn = todayAttendances.filter(att => att.checkIn && !att.checkOut).length;
   
-  return { user };
+  // Determine superadmin status
+  let superAdminStatus: "completed" | "pending" | "not_started" = "not_started";
+  if (superAdminAttendance) {
+    if (superAdminAttendance.checkOut) {
+      superAdminStatus = "completed";
+    } else if (superAdminAttendance.checkIn) {
+      superAdminStatus = "pending";
+    }
+  }
+
+  const dashboardStats = {
+    todayDate: today.toISOString(),
+    superAdminStatus,
+    workersPresent,
+    totalWorkers,
+    currentlyIn
+  };
+  
+  return { user, dashboardStats };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -143,7 +220,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function SuperAdminProfile() {
-  const { user } = useLoaderData<typeof loader>();
+  const { user, dashboardStats } = useLoaderData<typeof loader>();
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showChangeVerificationCode, setShowChangeVerificationCode] = useState(false);
 
@@ -158,6 +235,15 @@ export default function SuperAdminProfile() {
           Manage your super admin account settings and security
         </p>
       </div>
+
+      {/* Dashboard Statistics */}
+      <SuperAdminDashboardStats
+        todayDate={dashboardStats.todayDate}
+        superAdminStatus={dashboardStats.superAdminStatus}
+        workersPresent={dashboardStats.workersPresent}
+        totalWorkers={dashboardStats.totalWorkers}
+        currentlyIn={dashboardStats.currentlyIn}
+      />
 
       {/* Profile Information */}
       <div className="bg-white shadow sm:rounded-lg">

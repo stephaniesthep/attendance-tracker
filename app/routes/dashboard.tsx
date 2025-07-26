@@ -60,6 +60,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ? new Date(selectedDateParam)
     : new Date();
 
+  // Parse separate admin and workers date params for admin dashboard
+  const adminViewType = (url.searchParams.get("adminView") as ViewType) || "monthly";
+  const adminSelectedDateParam = url.searchParams.get("adminDate");
+  const adminSelectedDate = adminSelectedDateParam
+    ? new Date(adminSelectedDateParam)
+    : new Date();
+
+  const workersViewType = (url.searchParams.get("workersView") as ViewType) || "monthly";
+  const workersSelectedDateParam = url.searchParams.get("workersDate");
+  const workersSelectedDate = workersSelectedDateParam
+    ? new Date(workersSelectedDateParam)
+    : new Date();
+
   const today = new Date();
   const todayFormatted = format(today, "yyyy-MM-dd");
 
@@ -242,6 +255,48 @@ export async function loader({ request }: LoaderFunctionArgs) {
       todayFormatted,
     };
   } else if (isAdmin) {
+    // Calculate separate date ranges for admin and workers
+    let adminStartDate: Date, adminEndDate: Date;
+    let workersStartDate: Date, workersEndDate: Date;
+
+    // Admin date range
+    switch (adminViewType) {
+      case "daily":
+        adminStartDate = new Date(adminSelectedDate);
+        adminEndDate = new Date(adminSelectedDate);
+        break;
+      case "weekly":
+        adminStartDate = startOfWeek(adminSelectedDate, { weekStartsOn: 1 });
+        adminEndDate = endOfWeek(adminSelectedDate, { weekStartsOn: 1 });
+        break;
+      case "monthly":
+        adminStartDate = startOfMonth(adminSelectedDate);
+        adminEndDate = endOfMonth(adminSelectedDate);
+        break;
+      default:
+        adminStartDate = startOfMonth(adminSelectedDate);
+        adminEndDate = endOfMonth(adminSelectedDate);
+    }
+
+    // Workers date range
+    switch (workersViewType) {
+      case "daily":
+        workersStartDate = new Date(workersSelectedDate);
+        workersEndDate = new Date(workersSelectedDate);
+        break;
+      case "weekly":
+        workersStartDate = startOfWeek(workersSelectedDate, { weekStartsOn: 1 });
+        workersEndDate = endOfWeek(workersSelectedDate, { weekStartsOn: 1 });
+        break;
+      case "monthly":
+        workersStartDate = startOfMonth(workersSelectedDate);
+        workersEndDate = endOfMonth(workersSelectedDate);
+        break;
+      default:
+        workersStartDate = startOfMonth(workersSelectedDate);
+        workersEndDate = endOfMonth(workersSelectedDate);
+    }
+
     // Admin view - show admin's own data + all workers data
     const [
       totalWorkers,
@@ -346,8 +401,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
           attendances: {
             where: {
               date: {
-                gte: format(startDate, "yyyy-MM-dd"),
-                lte: format(endDate, "yyyy-MM-dd"),
+                gte: format(workersStartDate, "yyyy-MM-dd"),
+                lte: format(workersEndDate, "yyyy-MM-dd"),
               },
             },
             select: {
@@ -365,10 +420,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
               OR: [
                 {
                   startDate: {
-                    lte: endDate,
+                    lte: workersEndDate,
                   },
                   endDate: {
-                    gte: startDate,
+                    gte: workersStartDate,
                   },
                 },
               ],
@@ -393,8 +448,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
           attendances: {
             where: {
               date: {
-                gte: format(startDate, "yyyy-MM-dd"),
-                lte: format(endDate, "yyyy-MM-dd"),
+                gte: format(adminStartDate, "yyyy-MM-dd"),
+                lte: format(adminEndDate, "yyyy-MM-dd"),
               },
             },
             select: {
@@ -412,10 +467,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
               OR: [
                 {
                   startDate: {
-                    lte: endDate,
+                    lte: adminEndDate,
                   },
                   endDate: {
-                    gte: startDate,
+                    gte: adminStartDate,
                   },
                 },
               ],
@@ -474,6 +529,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
       canDownloadExcel: true,
       selectedDate: selectedDate.toISOString(),
       viewType,
+      // Admin-specific date info
+      adminSelectedDate: adminSelectedDate.toISOString(),
+      adminViewType,
+      // Workers-specific date info
+      workersSelectedDate: workersSelectedDate.toISOString(),
+      workersViewType,
       workersAttendanceMatrixData,
       adminAttendanceMatrixData,
       adminTodayAttendance,
@@ -608,6 +669,32 @@ export default function Dashboard() {
   const handleViewTypeChange = (newViewType: ViewType) => {
     const newSearchParams = new URLSearchParams(searchParams);
     newSearchParams.set("view", newViewType);
+    setSearchParams(newSearchParams);
+  };
+
+  // Admin-specific date handlers
+  const handleAdminDateChange = (date: Date) => {
+    const newSearchParams = new URLSearchParams(searchParams);
+    newSearchParams.set("adminDate", date.toISOString());
+    setSearchParams(newSearchParams);
+  };
+
+  const handleAdminViewTypeChange = (newViewType: ViewType) => {
+    const newSearchParams = new URLSearchParams(searchParams);
+    newSearchParams.set("adminView", newViewType);
+    setSearchParams(newSearchParams);
+  };
+
+  // Workers-specific date handlers
+  const handleWorkersDateChange = (date: Date) => {
+    const newSearchParams = new URLSearchParams(searchParams);
+    newSearchParams.set("workersDate", date.toISOString());
+    setSearchParams(newSearchParams);
+  };
+
+  const handleWorkersViewTypeChange = (newViewType: ViewType) => {
+    const newSearchParams = new URLSearchParams(searchParams);
+    newSearchParams.set("workersView", newViewType);
     setSearchParams(newSearchParams);
   };
 
@@ -788,7 +875,16 @@ export default function Dashboard() {
     );
   } else if (data.isAdmin) {
     // Admin Dashboard View
-    const { stats, adminTodayAttendance, workersAttendanceMatrixData, adminAttendanceMatrixData } = data as any;
+    const {
+      stats,
+      adminTodayAttendance,
+      workersAttendanceMatrixData,
+      adminAttendanceMatrixData,
+      adminSelectedDate,
+      adminViewType,
+      workersSelectedDate,
+      workersViewType
+    } = data as any;
 
     return (
       <div className="space-y-6">
@@ -901,17 +997,17 @@ export default function Dashboard() {
               Your Attendance Matrix
             </h2>
             <DateRangeSelector
-              selectedDate={new Date(selectedDate)}
-              viewType={viewType}
-              onDateChange={handleDateChange}
-              onViewTypeChange={handleViewTypeChange}
+              selectedDate={new Date(adminSelectedDate)}
+              viewType={adminViewType}
+              onDateChange={handleAdminDateChange}
+              onViewTypeChange={handleAdminViewTypeChange}
             />
           </div>
 
           <AttendanceMatrix
             data={adminAttendanceMatrixData}
-            viewType={viewType}
-            selectedDate={new Date(selectedDate)}
+            viewType={adminViewType}
+            selectedDate={new Date(adminSelectedDate)}
             showUserNames={false} // Hide user names since it's personal view
             canExport={true}
             userRole="admin"
@@ -922,8 +1018,8 @@ export default function Dashboard() {
                   const { exportAttendanceMatrixToExcel } = await import("~/utils/attendance-matrix-excel");
                   await exportAttendanceMatrixToExcel({
                     data: adminAttendanceMatrixData,
-                    selectedDate: new Date(selectedDate),
-                    viewType: viewType as any,
+                    selectedDate: new Date(adminSelectedDate),
+                    viewType: adminViewType as any,
                     userRole: 'admin',
                     showUserNames: false,
                     worksheetName: "Admin Personal Attendance Matrix"
@@ -945,25 +1041,41 @@ export default function Dashboard() {
               <Users className="h-5 w-5 mr-2" />
               Workers Attendance Matrix
             </h2>
-            {canDownloadExcel && (
-              <button
-                onClick={exportToExcel}
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export to Excel
-              </button>
-            )}
+            <DateRangeSelector
+              selectedDate={new Date(workersSelectedDate)}
+              viewType={workersViewType}
+              onDateChange={handleWorkersDateChange}
+              onViewTypeChange={handleWorkersViewTypeChange}
+            />
           </div>
 
           <AttendanceMatrix
             data={workersAttendanceMatrixData}
-            viewType={viewType}
-            selectedDate={new Date(selectedDate)}
+            viewType={workersViewType}
+            selectedDate={new Date(workersSelectedDate)}
             showUserNames={true} // Show user names for workers
             canExport={true}
             userRole="admin"
-            onExport={exportToExcel}
+            onExport={() => {
+              // Custom export for workers data
+              const exportWorkersData = async () => {
+                try {
+                  const { exportAttendanceMatrixToExcel } = await import("~/utils/attendance-matrix-excel");
+                  await exportAttendanceMatrixToExcel({
+                    data: workersAttendanceMatrixData,
+                    selectedDate: new Date(workersSelectedDate),
+                    viewType: workersViewType as any,
+                    userRole: 'admin',
+                    showUserNames: true,
+                    worksheetName: "Workers Attendance Matrix"
+                  });
+                } catch (error) {
+                  console.error("Error exporting workers attendance:", error);
+                  alert("Error generating Excel file. Please try again.");
+                }
+              };
+              exportWorkersData();
+            }}
           />
         </div>
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { differenceInDays, addDays, isSameDay, isWithinInterval } from "date-fns";
+import { differenceInDays, addDays, isSameDay, isWithinInterval, isBefore, isAfter, format } from "date-fns";
 
 export interface DateRange {
   from?: Date;
@@ -59,6 +59,32 @@ export function Calendar({
     return mode === 'range' && selectedRange?.to ? isSameDay(date, selectedRange.to) : false;
   };
 
+  // Helper function to check if date is in hover preview range
+  const [hoverDate, setHoverDate] = useState<Date | null>(null);
+  
+  const isDateInHoverRange = (date: Date): boolean => {
+    if (mode !== 'range' || !selectedRange?.from || selectedRange.to || !hoverDate) return false;
+    
+    const start = selectedRange.from;
+    const end = hoverDate;
+    
+    if (isBefore(end, start)) {
+      return isWithinInterval(date, { start: end, end: start });
+    } else {
+      return isWithinInterval(date, { start, end });
+    }
+  };
+
+  const isHoverRangeValid = (date: Date): boolean => {
+    if (!selectedRange?.from || !date) return true;
+    
+    const start = selectedRange.from;
+    const end = date;
+    const daysDiff = Math.abs(differenceInDays(end, start)) + 1;
+    
+    return daysDiff <= maxRangeDays;
+  };
+
   // Get first day of the month and how many days in the month
   const firstDayOfMonth = new Date(year, month, 1);
   const lastDayOfMonth = new Date(year, month + 1, 0);
@@ -78,6 +104,7 @@ export function Calendar({
     const day = daysInPrevMonth - i;
     const date = new Date(year, month - 1, day);
     const inRange = isDateInRange(date);
+    const inHoverRange = isDateInHoverRange(date);
     const isRangeStart = isDateRangeStart(date);
     const isRangeEnd = isDateRangeEnd(date);
     
@@ -89,6 +116,7 @@ export function Calendar({
       isSelected: false,
       isDisabled: (minDate && date < minDate) || (maxDate && date > maxDate),
       inRange,
+      inHoverRange,
       isRangeStart,
       isRangeEnd,
     });
@@ -101,6 +129,7 @@ export function Calendar({
     const isSelected = mode === 'single' && selected && date.toDateString() === selected.toDateString();
     const isDisabled = (minDate && date < minDate) || (maxDate && date > maxDate);
     const inRange = isDateInRange(date);
+    const inHoverRange = isDateInHoverRange(date);
     const isRangeStart = isDateRangeStart(date);
     const isRangeEnd = isDateRangeEnd(date);
 
@@ -112,6 +141,7 @@ export function Calendar({
       isSelected,
       isDisabled,
       inRange,
+      inHoverRange,
       isRangeStart,
       isRangeEnd,
     });
@@ -122,6 +152,7 @@ export function Calendar({
   for (let day = 1; day <= remainingDays; day++) {
     const date = new Date(year, month + 1, day);
     const inRange = isDateInRange(date);
+    const inHoverRange = isDateInHoverRange(date);
     const isRangeStart = isDateRangeStart(date);
     const isRangeEnd = isDateRangeEnd(date);
     
@@ -133,6 +164,7 @@ export function Calendar({
       isSelected: false,
       isDisabled: (minDate && date < minDate) || (maxDate && date > maxDate),
       inRange,
+      inHoverRange,
       isRangeStart,
       isRangeEnd,
     });
@@ -165,6 +197,7 @@ export function Calendar({
         // Start new range
         console.log('Starting new range with:', date);
         onSelectRange({ from: date, to: undefined });
+        setHoverDate(null);
       } else if (selectedRange.from && !selectedRange.to) {
         // Complete range
         const from = selectedRange.from;
@@ -186,8 +219,26 @@ export function Calendar({
           console.log('Range is valid, setting complete range');
           onSelectRange({ from: startDate, to: endDate });
         }
+        setHoverDate(null);
       }
     }
+  };
+
+  const handleDateHover = (date: Date, isDisabled: boolean) => {
+    if (isDisabled || mode !== 'range' || !selectedRange?.from || selectedRange.to) {
+      setHoverDate(null);
+      return;
+    }
+    
+    setHoverDate(date);
+  };
+
+  const handleDateLeave = () => {
+    if (mode === 'range' && selectedRange?.from && !selectedRange?.to) {
+      // Keep hover state when moving between dates during range selection
+      return;
+    }
+    setHoverDate(null);
   };
 
   const handleTodayClick = () => {
@@ -242,37 +293,87 @@ export function Calendar({
       </div>
 
       {/* Calendar grid */}
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-1" onMouseLeave={handleDateLeave}>
         {calendarDays.map((calendarDay, index) => {
-          const { date, day, isCurrentMonth, isToday, isSelected, isDisabled, inRange, isRangeStart, isRangeEnd } = calendarDay;
+          const { date, day, isCurrentMonth, isToday, isSelected, isDisabled, inRange, inHoverRange, isRangeStart, isRangeEnd } = calendarDay;
+          
+          // Enhanced styling logic for better range visualization
+          const isHoverValid = isHoverRangeValid(date);
+          const showHoverPreview = inHoverRange && isHoverValid;
+          const showInvalidHover = inHoverRange && !isHoverValid;
+          
+          // Determine if this date is at the start or end of a visual range (including hover)
+          const isVisualRangeStart = isRangeStart || (showHoverPreview && selectedRange?.from && isSameDay(date, selectedRange.from));
+          const isVisualRangeEnd = isRangeEnd || (showHoverPreview && hoverDate && isSameDay(date, hoverDate));
           
           return (
             <button
               key={index}
               onClick={() => handleDateClick(date, isDisabled || false)}
+              onMouseEnter={() => handleDateHover(date, isDisabled || false)}
               disabled={isDisabled}
               type="button"
               className={`
-                h-8 w-8 text-sm transition-colors relative
+                h-8 w-8 text-sm transition-all duration-150 relative
                 ${isCurrentMonth ? 'text-gray-900' : 'text-gray-400'}
-                ${isToday && !isSelected && !isRangeStart && !isRangeEnd && !inRange ? 'bg-blue-100 text-blue-900 font-semibold rounded-md' : ''}
+                ${isToday && !isSelected && !isRangeStart && !isRangeEnd && !inRange && !showHoverPreview ? 'bg-blue-100 text-blue-900 font-semibold rounded-md border border-blue-300' : ''}
                 ${isSelected ? 'bg-blue-600 text-white font-semibold rounded-md' : ''}
-                ${isRangeStart && !isRangeEnd ? 'bg-blue-600 text-white font-semibold rounded-md' : ''}
+                ${isRangeStart && !isRangeEnd ? 'bg-blue-600 text-white font-semibold' : ''}
                 ${isRangeStart && isRangeEnd ? 'bg-blue-600 text-white font-semibold rounded-md' : ''}
-                ${isRangeStart && !isRangeEnd && selectedRange?.to ? 'bg-blue-600 text-white font-semibold rounded-l-md' : ''}
+                ${isRangeStart && selectedRange?.to ? 'rounded-l-md' : isRangeStart ? 'rounded-md' : ''}
                 ${isRangeEnd && !isRangeStart ? 'bg-blue-600 text-white font-semibold rounded-r-md' : ''}
                 ${inRange && !isRangeStart && !isRangeEnd ? 'bg-blue-200 text-blue-900 font-medium' : ''}
+                ${showHoverPreview && !inRange && !isRangeStart && !isRangeEnd ? 'bg-blue-100 text-blue-800 font-medium border border-blue-200' : ''}
+                ${showInvalidHover ? 'bg-red-100 text-red-800 border border-red-200' : ''}
                 ${isDisabled ? 'cursor-not-allowed opacity-50' : ''}
-                ${!isSelected && !isToday && !isDisabled && !inRange && !isRangeStart && !isRangeEnd ? 'hover:bg-gray-100 rounded-md' : ''}
+                ${!isSelected && !isToday && !isDisabled && !inRange && !isRangeStart && !isRangeEnd && !showHoverPreview && !showInvalidHover ? 'hover:bg-gray-100 hover:scale-105' : ''}
                 ${inRange && !isRangeStart && !isRangeEnd ? 'rounded-none' : ''}
-                ${!inRange && !isSelected && !isToday && !isRangeStart && !isRangeEnd ? 'rounded-md' : ''}
+                ${showHoverPreview && !isVisualRangeStart && !isVisualRangeEnd ? 'rounded-none' : ''}
+                ${!inRange && !showHoverPreview && !isSelected && !isToday && !isRangeStart && !isRangeEnd ? 'rounded-md' : ''}
               `}
             >
               {day}
+              {showInvalidHover && (
+                <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full text-xs flex items-center justify-center text-white">
+                  !
+                </div>
+              )}
             </button>
           );
         })}
       </div>
+
+      {/* Range selection info */}
+      {mode === 'range' && selectedRange?.from && (
+        <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded-md">
+          <div className="text-xs text-blue-800">
+            {selectedRange.to ? (
+              <div className="flex justify-between items-center">
+                <span>Selected: {differenceInDays(selectedRange.to, selectedRange.from) + 1} days</span>
+                <span className="text-blue-600">
+                  {format(selectedRange.from, 'MMM d')} - {format(selectedRange.to, 'MMM d')}
+                </span>
+              </div>
+            ) : (
+              <div className="flex justify-between items-center">
+                <span>Start: {format(selectedRange.from, 'MMM d, yyyy')}</span>
+                <span className="text-blue-600">Select end date</span>
+              </div>
+            )}
+          </div>
+          {hoverDate && selectedRange.from && !selectedRange.to && (
+            <div className="text-xs text-gray-600 mt-1">
+              {isHoverRangeValid(hoverDate) ? (
+                <span>Preview: {Math.abs(differenceInDays(hoverDate, selectedRange.from)) + 1} days</span>
+              ) : (
+                <span className="text-red-600">
+                  Exceeds {maxRangeDays} day limit ({Math.abs(differenceInDays(hoverDate, selectedRange.from)) + 1} days)
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Action buttons */}
       <div className="flex justify-between items-center mt-4 pt-3 border-t border-gray-200">

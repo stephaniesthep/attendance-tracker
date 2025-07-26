@@ -51,16 +51,20 @@ export async function action({ request }: ActionFunctionArgs) {
       }, { status: 400 });
     }
     
-    // Check if already checked in today
-    const existingAttendance = await prisma.attendance.findFirst({
+    // Check if already checked in today (only prevent if there's an active check-in without check-out)
+    const activeAttendance = await prisma.attendance.findFirst({
       where: {
         userId: user.id,
         date: todayString,
+        checkOut: null, // Only check for records that haven't been checked out
+      },
+      orderBy: {
+        checkIn: 'desc', // Get the most recent check-in
       },
     });
 
-    if (existingAttendance) {
-      return Response.json({ error: "You have already checked in today" }, { status: 400 });
+    if (activeAttendance) {
+      return Response.json({ error: "You are already checked in. Please check out first before checking in again." }, { status: 400 });
     }
 
     // Create attendance record using correct field names from schema
@@ -76,7 +80,10 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
 
-    return redirect("/attendance");
+    return Response.json({
+      success: true,
+      message: "Check-in Successful"
+    }, { status: 200 });
   } catch (error) {
     console.error("Check-in error:", error);
     // For any other error, return a JSON error response
