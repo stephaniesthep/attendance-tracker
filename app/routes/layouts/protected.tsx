@@ -2,7 +2,7 @@ import { Outlet, Link, useLoaderData, Form } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
 import { userHasRole } from "~/utils/auth";
-import { LogOut, Home, Camera, Users, User, Shield, BarChart3 } from "lucide-react";
+import { LogOut, Home, Camera, Users, User, Shield, BarChart3, Calendar } from "lucide-react";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
@@ -47,6 +47,13 @@ export default function ProtectedLayout() {
                 >
                   <Home className="w-4 h-4 mr-2" />
                   Dashboard
+                </Link>
+                <Link
+                  to="/attendance-matrix"
+                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                >
+                  <Calendar className="w-4 h-4 mr-2" />
+                  Attendance Matrix
                 </Link>
                 {(isAdmin || isSuperAdmin) && (
                   <Link

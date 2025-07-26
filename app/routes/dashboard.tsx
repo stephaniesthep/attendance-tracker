@@ -1,39 +1,23 @@
-import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
+import { useLoaderData, useRevalidator } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireUser } from "~/utils/session.server";
 import { getUserPrimaryRole, userHasRole } from "~/utils/auth";
 import { prisma } from "~/utils/db.server";
-import {
-  format,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-  eachDayOfInterval,
-} from "date-fns";
+import { getWorkerAttendanceStats } from "~/utils/attendance-stats.server";
+import { format } from "date-fns";
 import {
   Clock,
   Calendar,
   CheckCircle,
   XCircle,
-  Download,
   Shield,
   Users,
   House,
 } from "lucide-react";
 import { useEffect } from "react";
-import { redirect } from "react-router";
 import type { User } from "@prisma/client";
-import {
-  AttendanceMatrix,
-  type UserAttendanceData,
-} from "~/components/AttendanceMatrix";
-import {
-  DateRangeSelector,
-  type ViewType,
-} from "~/components/DateRangeSelector";
-import { AttendanceMatrixSection } from "~/components/AttendanceMatrixSection";
 import { TodayAttendanceWidget } from "~/components/TodayAttendanceWidget";
+import { CheckoutTimeWidget } from "~/components/CheckoutTimeWidget";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
@@ -52,63 +36,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     "ADMIN"
   );
 
-  // Parse URL search params for date and view type
-  const url = new URL(request.url);
-  const viewType = (url.searchParams.get("view") as ViewType) || "monthly";
-  const selectedDateParam = url.searchParams.get("date");
-  const selectedDate = selectedDateParam
-    ? new Date(selectedDateParam)
-    : new Date();
-
-  // Parse separate admin and workers date params for admin dashboard
-  const adminViewType = (url.searchParams.get("adminView") as ViewType) || "monthly";
-  const adminSelectedDateParam = url.searchParams.get("adminDate");
-  const adminSelectedDate = adminSelectedDateParam
-    ? new Date(adminSelectedDateParam)
-    : new Date();
-
-  const workersViewType = (url.searchParams.get("workersView") as ViewType) || "monthly";
-  const workersSelectedDateParam = url.searchParams.get("workersDate");
-  const workersSelectedDate = workersSelectedDateParam
-    ? new Date(workersSelectedDateParam)
-    : new Date();
-
   const today = new Date();
   const todayFormatted = format(today, "yyyy-MM-dd");
 
-  // Calculate date range for attendance matrix based on view type
-  let startDate: Date;
-  let endDate: Date;
-
-  switch (viewType) {
-    case "daily":
-      startDate = new Date(selectedDate);
-      endDate = new Date(selectedDate);
-      break;
-    case "weekly":
-      startDate = startOfWeek(selectedDate, { weekStartsOn: 1 }); // Monday start
-      endDate = endOfWeek(selectedDate, { weekStartsOn: 1 });
-      break;
-    case "monthly":
-      startDate = startOfMonth(selectedDate);
-      endDate = endOfMonth(selectedDate);
-      break;
-    default:
-      startDate = startOfMonth(selectedDate);
-      endDate = endOfMonth(selectedDate);
-  }
-
   if (isSuperAdmin) {
-    // SuperAdmin view - show system-wide data
+    // SuperAdmin view - show system-wide data using unified service
     const [
       totalUsers,
       usersByRole,
-      totalWorkers,
-      todayAttendanceCount,
-      checkedInToday,
-      completedToday,
+      workerStats,
       recentAttendance,
-      workersWithAttendance,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.role.findMany({
@@ -120,35 +57,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
           },
         },
       }),
-      prisma.user.count({
-        where: {
-          roles: {
-            some: {
-              name: "WORKER",
-            },
-          },
-        },
-      }),
-      prisma.attendance
-        .groupBy({
-          by: ["userId"],
-          where: {
-            date: todayFormatted,
-          },
-        })
-        .then((result) => result.length),
-      prisma.attendance.count({
-        where: {
-          date: todayFormatted,
-          checkOut: null,
-        },
-      }),
-      prisma.attendance.count({
-        where: {
-          date: todayFormatted,
-          checkOut: { not: null },
-        },
-      }),
+      // Use unified attendance statistics service
+      getWorkerAttendanceStats(today),
       prisma.attendance.findMany({
         take: 5,
         orderBy: {
@@ -167,197 +77,34 @@ export async function loader({ request }: LoaderFunctionArgs) {
           },
         },
       }),
-      prisma.user.findMany({
-        where: {
-          roles: {
-            some: {
-              name: "WORKER",
-            },
-          },
-        },
-        select: {
-          id: true,
-          name: true,
-          department: true,
-          attendances: {
-            where: {
-              date: {
-                gte: format(startDate, "yyyy-MM-dd"),
-                lte: format(endDate, "yyyy-MM-dd"),
-              },
-            },
-            select: {
-              id: true,
-              userId: true,
-              date: true,
-              checkIn: true,
-              checkOut: true,
-              shift: true,
-              status: true,
-            },
-          },
-          offDays: {
-            where: {
-              OR: [
-                {
-                  startDate: {
-                    lte: endDate,
-                  },
-                  endDate: {
-                    gte: startDate,
-                  },
-                },
-              ],
-            },
-            select: {
-              id: true,
-              userId: true,
-              startDate: true,
-              endDate: true,
-              reason: true,
-            },
-          },
-        },
-      }),
     ]);
-
-    // Transform data for AttendanceMatrix component
-    const attendanceMatrixData: UserAttendanceData[] =
-      workersWithAttendance.map((worker) => ({
-        user: {
-          id: worker.id,
-          name: worker.name,
-          department: worker.department,
-        },
-        attendances: worker.attendances,
-        offDays: worker.offDays,
-      }));
 
     return {
       user,
       userPrimaryRole: primaryRole,
       isSuperAdmin: true,
       isAdmin,
-      canDownloadExcel: true,
-      selectedDate: selectedDate.toISOString(),
-      viewType,
-      attendanceMatrixData,
       stats: {
         totalUsers,
         usersByRole,
-        totalWorkers,
-        todayAttendance: todayAttendanceCount,
-        checkedInToday,
-        completedToday,
+        totalWorkers: workerStats.totalWorkers,
+        todayAttendance: workerStats.workersPresent,
+        checkedInToday: workerStats.currentlyIn,
+        completedToday: workerStats.completedToday,
         recentAttendance,
       },
-      todayDate: todayFormatted,
+      todayDate: workerStats.todayDate,
       todayFormatted,
     };
   } else if (isAdmin) {
-    // Calculate separate date ranges for admin and workers
-    let adminStartDate: Date, adminEndDate: Date;
-    let workersStartDate: Date, workersEndDate: Date;
-
-    // Admin date range
-    switch (adminViewType) {
-      case "daily":
-        adminStartDate = new Date(adminSelectedDate);
-        adminEndDate = new Date(adminSelectedDate);
-        break;
-      case "weekly":
-        adminStartDate = startOfWeek(adminSelectedDate, { weekStartsOn: 1 });
-        adminEndDate = endOfWeek(adminSelectedDate, { weekStartsOn: 1 });
-        break;
-      case "monthly":
-        adminStartDate = startOfMonth(adminSelectedDate);
-        adminEndDate = endOfMonth(adminSelectedDate);
-        break;
-      default:
-        adminStartDate = startOfMonth(adminSelectedDate);
-        adminEndDate = endOfMonth(adminSelectedDate);
-    }
-
-    // Workers date range
-    switch (workersViewType) {
-      case "daily":
-        workersStartDate = new Date(workersSelectedDate);
-        workersEndDate = new Date(workersSelectedDate);
-        break;
-      case "weekly":
-        workersStartDate = startOfWeek(workersSelectedDate, { weekStartsOn: 1 });
-        workersEndDate = endOfWeek(workersSelectedDate, { weekStartsOn: 1 });
-        break;
-      case "monthly":
-        workersStartDate = startOfMonth(workersSelectedDate);
-        workersEndDate = endOfMonth(workersSelectedDate);
-        break;
-      default:
-        workersStartDate = startOfMonth(workersSelectedDate);
-        workersEndDate = endOfMonth(workersSelectedDate);
-    }
-
-    // Admin view - show admin's own data + all workers data
+    // Admin view - show admin's own data + all workers data using unified service
     const [
-      totalWorkers,
-      todayAttendanceCount,
-      checkedInToday,
-      completedToday,
+      workerStats,
       recentWorkersAttendance,
-      workersWithAttendance,
-      adminAttendanceData,
       adminTodayAttendance,
     ] = await Promise.all([
-      prisma.user.count({
-        where: {
-          roles: {
-            some: {
-              name: "WORKER",
-            },
-          },
-        },
-      }),
-      prisma.attendance
-        .groupBy({
-          by: ["userId"],
-          where: {
-            date: todayFormatted,
-            user: {
-              roles: {
-                some: {
-                  name: "WORKER",
-                },
-              },
-            },
-          },
-        })
-        .then((result) => result.length),
-      prisma.attendance.count({
-        where: {
-          date: todayFormatted,
-          checkOut: null,
-          user: {
-            roles: {
-              some: {
-                name: "WORKER",
-              },
-            },
-          },
-        },
-      }),
-      prisma.attendance.count({
-        where: {
-          date: todayFormatted,
-          checkOut: { not: null },
-          user: {
-            roles: {
-              some: {
-                name: "WORKER",
-              },
-            },
-          },
-        },
-      }),
+      // Use unified attendance statistics service for consistent worker stats
+      getWorkerAttendanceStats(today),
       prisma.attendance.findMany({
         take: 10,
         orderBy: {
@@ -386,105 +133,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
           },
         },
       }),
-      prisma.user.findMany({
-        where: {
-          roles: {
-            some: {
-              name: "WORKER",
-            },
-          },
-        },
-        select: {
-          id: true,
-          name: true,
-          department: true,
-          attendances: {
-            where: {
-              date: {
-                gte: format(workersStartDate, "yyyy-MM-dd"),
-                lte: format(workersEndDate, "yyyy-MM-dd"),
-              },
-            },
-            select: {
-              id: true,
-              userId: true,
-              date: true,
-              checkIn: true,
-              checkOut: true,
-              shift: true,
-              status: true,
-            },
-          },
-          offDays: {
-            where: {
-              OR: [
-                {
-                  startDate: {
-                    lte: workersEndDate,
-                  },
-                  endDate: {
-                    gte: workersStartDate,
-                  },
-                },
-              ],
-            },
-            select: {
-              id: true,
-              userId: true,
-              startDate: true,
-              endDate: true,
-              reason: true,
-            },
-          },
-        },
-      }),
-      // Get admin's own attendance data
-      prisma.user.findUnique({
-        where: { id: user.id },
-        select: {
-          id: true,
-          name: true,
-          department: true,
-          attendances: {
-            where: {
-              date: {
-                gte: format(adminStartDate, "yyyy-MM-dd"),
-                lte: format(adminEndDate, "yyyy-MM-dd"),
-              },
-            },
-            select: {
-              id: true,
-              userId: true,
-              date: true,
-              checkIn: true,
-              checkOut: true,
-              shift: true,
-              status: true,
-            },
-          },
-          offDays: {
-            where: {
-              OR: [
-                {
-                  startDate: {
-                    lte: adminEndDate,
-                  },
-                  endDate: {
-                    gte: adminStartDate,
-                  },
-                },
-              ],
-            },
-            select: {
-              id: true,
-              userId: true,
-              startDate: true,
-              endDate: true,
-              reason: true,
-            },
-          },
-        },
-      }),
       // Get admin's today attendance
       prisma.attendance.findFirst({
         where: {
@@ -494,62 +142,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }),
     ]);
 
-    // Transform workers data for AttendanceMatrix component
-    const workersAttendanceMatrixData: UserAttendanceData[] =
-      workersWithAttendance.map((worker) => ({
-        user: {
-          id: worker.id,
-          name: worker.name,
-          department: worker.department,
-        },
-        attendances: worker.attendances,
-        offDays: worker.offDays,
-      }));
-
-    // Transform admin's own data for AttendanceMatrix component
-    const adminAttendanceMatrixData: UserAttendanceData[] = adminAttendanceData
-      ? [
-          {
-            user: {
-              id: adminAttendanceData.id,
-              name: adminAttendanceData.name,
-              department: adminAttendanceData.department,
-            },
-            attendances: adminAttendanceData.attendances,
-            offDays: adminAttendanceData.offDays,
-          },
-        ]
-      : [];
-
     return {
       user,
       userPrimaryRole: primaryRole,
       isSuperAdmin: false,
       isAdmin: true,
-      canDownloadExcel: true,
-      selectedDate: selectedDate.toISOString(),
-      viewType,
-      // Admin-specific date info
-      adminSelectedDate: adminSelectedDate.toISOString(),
-      adminViewType,
-      // Workers-specific date info
-      workersSelectedDate: workersSelectedDate.toISOString(),
-      workersViewType,
-      workersAttendanceMatrixData,
-      adminAttendanceMatrixData,
       adminTodayAttendance,
       stats: {
-        totalWorkers,
-        todayAttendance: todayAttendanceCount,
-        checkedInToday,
-        completedToday,
+        totalWorkers: workerStats.totalWorkers,
+        todayAttendance: workerStats.workersPresent,
+        checkedInToday: workerStats.currentlyIn,
+        completedToday: workerStats.completedToday,
         recentWorkersAttendance,
       },
       todayFormatted,
     };
   } else {
     // Regular user view - show personal data
-    const [todayAttendance, recentAttendance, userAttendanceData] =
+    const [todayAttendance, recentAttendance] =
       await Promise.all([
         prisma.attendance.findFirst({
           where: {
@@ -566,81 +176,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
           },
           take: 5,
         }),
-        // Get user's attendance data for the selected period
-        prisma.user.findUnique({
-          where: { id: user.id },
-          select: {
-            id: true,
-            name: true,
-            department: true,
-            attendances: {
-              where: {
-                date: {
-                  gte: format(startDate, "yyyy-MM-dd"),
-                  lte: format(endDate, "yyyy-MM-dd"),
-                },
-              },
-              select: {
-                id: true,
-                userId: true,
-                date: true,
-                checkIn: true,
-                checkOut: true,
-                shift: true,
-                status: true,
-              },
-            },
-            offDays: {
-              where: {
-                OR: [
-                  {
-                    startDate: {
-                      lte: endDate,
-                    },
-                    endDate: {
-                      gte: startDate,
-                    },
-                  },
-                ],
-              },
-              select: {
-                id: true,
-                userId: true,
-                startDate: true,
-                endDate: true,
-                reason: true,
-              },
-            },
-          },
-        }),
       ]);
-
-    // Transform data for AttendanceMatrix component
-    const attendanceMatrixData: UserAttendanceData[] = userAttendanceData
-      ? [
-          {
-            user: {
-              id: userAttendanceData.id,
-              name: userAttendanceData.name,
-              department: userAttendanceData.department,
-            },
-            attendances: userAttendanceData.attendances,
-            offDays: userAttendanceData.offDays,
-          },
-        ]
-      : [];
 
     return {
       user,
       todayAttendance,
       recentAttendance,
-      attendanceMatrixData,
-      selectedDate: selectedDate.toISOString(),
-      viewType,
       userPrimaryRole: primaryRole,
       isSuperAdmin: false,
       isAdmin,
-      canDownloadExcel: isAdmin || isSuperAdmin,
       todayFormatted,
     };
   }
@@ -650,131 +194,15 @@ export default function Dashboard() {
   const data = useLoaderData<typeof loader>();
   const {
     user,
-    attendanceMatrixData,
-    selectedDate,
-    viewType,
-    canDownloadExcel,
     isSuperAdmin,
     todayFormatted,
   } = data;
   const revalidator = useRevalidator();
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  const handleDateChange = (date: Date) => {
-    const newSearchParams = new URLSearchParams(searchParams);
-    newSearchParams.set("date", date.toISOString());
-    setSearchParams(newSearchParams);
-  };
-
-  const handleViewTypeChange = (newViewType: ViewType) => {
-    const newSearchParams = new URLSearchParams(searchParams);
-    newSearchParams.set("view", newViewType);
-    setSearchParams(newSearchParams);
-  };
-
-  // Admin-specific date handlers
-  const handleAdminDateChange = (date: Date) => {
-    const newSearchParams = new URLSearchParams(searchParams);
-    newSearchParams.set("adminDate", date.toISOString());
-    setSearchParams(newSearchParams);
-  };
-
-  const handleAdminViewTypeChange = (newViewType: ViewType) => {
-    const newSearchParams = new URLSearchParams(searchParams);
-    newSearchParams.set("adminView", newViewType);
-    setSearchParams(newSearchParams);
-  };
-
-  // Workers-specific date handlers
-  const handleWorkersDateChange = (date: Date) => {
-    const newSearchParams = new URLSearchParams(searchParams);
-    newSearchParams.set("workersDate", date.toISOString());
-    setSearchParams(newSearchParams);
-  };
-
-  const handleWorkersViewTypeChange = (newViewType: ViewType) => {
-    const newSearchParams = new URLSearchParams(searchParams);
-    newSearchParams.set("workersView", newViewType);
-    setSearchParams(newSearchParams);
-  };
 
   const getRoleCount = (roleName: string) => {
     if (!isSuperAdmin || !("stats" in data) || !data.stats || !data.stats.usersByRole) return 0;
     const roleData = data.stats.usersByRole.find((r) => r.name === roleName);
     return roleData?._count.users || 0;
-  };
-
-  const exportToExcel = async () => {
-    // Determine which data to export based on user role
-    let dataToExport: UserAttendanceData[] = [];
-    let userRole: 'worker' | 'admin' | 'superadmin' = 'worker';
-    let worksheetName = "Attendance Matrix";
-    let showUserNames = true;
-    
-    if (data.isAdmin && 'workersAttendanceMatrixData' in data) {
-      // Admin view - export workers data
-      dataToExport = (data as any).workersAttendanceMatrixData || [];
-      userRole = 'admin';
-      worksheetName = "Workers Attendance Matrix";
-      showUserNames = true;
-    } else if (isSuperAdmin && attendanceMatrixData) {
-      // SuperAdmin view - export all users data
-      dataToExport = attendanceMatrixData;
-      userRole = 'superadmin';
-      worksheetName = "All Users Attendance Matrix";
-      showUserNames = true;
-    } else if (attendanceMatrixData) {
-      // Regular user view - export personal data
-      dataToExport = attendanceMatrixData;
-      userRole = 'worker';
-      worksheetName = "Personal Attendance Matrix";
-      showUserNames = false; // Don't show user names for personal view
-    }
-
-    if (!canDownloadExcel || dataToExport.length === 0) {
-      alert("No data available to export.");
-      return;
-    }
-
-    try {
-      // Use the new enhanced Excel export utility
-      const { exportAttendanceMatrixToExcel } = await import("~/utils/attendance-matrix-excel");
-      
-      await exportAttendanceMatrixToExcel({
-        data: dataToExport,
-        selectedDate: new Date(selectedDate),
-        viewType: viewType as any,
-        userRole,
-        showUserNames,
-        worksheetName
-      });
-    } catch (error) {
-      console.error("Error generating Excel file:", error);
-      alert("Error generating Excel file. Please try again.");
-    }
-  };
-
-  // Helper function to generate date range (same as in AttendanceMatrix component)
-  const getDateRange = (
-    selectedDate: Date,
-    viewType: "daily" | "weekly" | "monthly"
-  ): Date[] => {
-    switch (viewType) {
-      case "daily":
-        return [selectedDate];
-      case "weekly":
-        return eachDayOfInterval({
-          start: startOfWeek(selectedDate, { weekStartsOn: 1 }), // Monday start
-          end: endOfWeek(selectedDate, { weekStartsOn: 1 }),
-        });
-      case "monthly":
-        return eachDayOfInterval({
-          start: startOfMonth(selectedDate),
-          end: endOfMonth(selectedDate),
-        });
-      default:
-        return [selectedDate];
-    }
   };
 
   // Auto-refresh every 30 seconds to get latest attendance data
@@ -787,38 +215,101 @@ export default function Dashboard() {
   }, [revalidator]);
 
   if (isSuperAdmin) {
-    // SuperAdmin Dashboard View
-    const { stats, todayDate } = data as any;
+  // SuperAdmin Dashboard View
+  const { stats, todayDate } = data as any;
 
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 flex items-center">
-            <House className="h-6 w-6 mr-2" />
-            Dashboard
-          </h1>
-          <p className="mt-1 text-sm text-gray-600">Attendance overview</p>
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold text-gray-900 flex items-center">
+          <House className="h-6 w-6 mr-2" />
+          Dashboard
+        </h1>
+        <p className="mt-1 text-sm text-gray-600">Attendance overview</p>
+      </div>
+
+      {/* SuperAdmin Status Cards */}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <Calendar className="h-6 w-6 text-gray-400" />
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">
+                    Today's Date
+                  </dt>
+                  <dd className="text-lg font-medium text-gray-900">
+                    {format(new Date(todayDate), "MMMM d, yyyy")}
+                  </dd>
+                </dl>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Today's Attendance Widget */}
-        <TodayAttendanceWidget
-          todayAttendance={stats.todayAttendance}
-          totalWorkers={stats.totalWorkers}
-          checkedInToday={stats.checkedInToday}
-          completedToday={stats.completedToday}
-          date={todayDate}
-        />
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <Users className="h-6 w-6 text-blue-400" />
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">
+                    Workers Present
+                  </dt>
+                  <dd className="text-lg font-medium text-gray-900">
+                    {stats.todayAttendance} / {stats.totalWorkers}
+                  </dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        {/* Attendance Matrix Section */}
-        <AttendanceMatrixSection
-          attendanceData={attendanceMatrixData || []}
-          selectedDate={new Date(selectedDate)}
-          viewType={viewType}
-          showUserNames={true}
-          canExport={true}
-          userRole="superadmin"
-          onExport={exportToExcel}
-        />
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <Clock className="h-6 w-6 text-yellow-400" />
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">
+                    Currently In
+                  </dt>
+                  <dd className="text-lg font-medium text-gray-900">
+                    {stats.checkedInToday}
+                  </dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <CheckCircle className="h-6 w-6 text-green-400" />
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">
+                    Completed Today
+                  </dt>
+                  <dd className="text-lg font-medium text-gray-900">
+                    {stats.completedToday}
+                  </dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
         {/* Recent Activity */}
         <div className="bg-white shadow overflow-hidden sm:rounded-md">
@@ -878,12 +369,6 @@ export default function Dashboard() {
     const {
       stats,
       adminTodayAttendance,
-      workersAttendanceMatrixData,
-      adminAttendanceMatrixData,
-      adminSelectedDate,
-      adminViewType,
-      workersSelectedDate,
-      workersViewType
     } = data as any;
 
     return (
@@ -899,7 +384,7 @@ export default function Dashboard() {
         </div>
 
         {/* Admin Status Cards */}
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5">
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="p-5">
               <div className="flex items-center">
@@ -987,96 +472,26 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Admin's Personal Attendance Matrix */}
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-medium text-gray-900 flex items-center">
-              <Calendar className="h-5 w-5 mr-2" />
-              Your Attendance Matrix
-            </h2>
-            <DateRangeSelector
-              selectedDate={new Date(adminSelectedDate)}
-              viewType={adminViewType}
-              onDateChange={handleAdminDateChange}
-              onViewTypeChange={handleAdminViewTypeChange}
-            />
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <CheckCircle className="h-6 w-6 text-green-400" />
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-gray-500 truncate">
+                      Completed Today
+                    </dt>
+                    <dd className="text-lg font-medium text-gray-900">
+                      {stats.completedToday}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
           </div>
-
-          <AttendanceMatrix
-            data={adminAttendanceMatrixData}
-            viewType={adminViewType}
-            selectedDate={new Date(adminSelectedDate)}
-            showUserNames={false} // Hide user names since it's personal view
-            canExport={true}
-            userRole="admin"
-            onExport={() => {
-              // Custom export for admin's personal data
-              const exportPersonalData = async () => {
-                try {
-                  const { exportAttendanceMatrixToExcel } = await import("~/utils/attendance-matrix-excel");
-                  await exportAttendanceMatrixToExcel({
-                    data: adminAttendanceMatrixData,
-                    selectedDate: new Date(adminSelectedDate),
-                    viewType: adminViewType as any,
-                    userRole: 'admin',
-                    showUserNames: false,
-                    worksheetName: "Admin Personal Attendance Matrix"
-                  });
-                } catch (error) {
-                  console.error("Error exporting personal attendance:", error);
-                  alert("Error generating Excel file. Please try again.");
-                }
-              };
-              exportPersonalData();
-            }}
-          />
-        </div>
-
-        {/* All Workers Attendance Matrix */}
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-medium text-gray-900 flex items-center">
-              <Users className="h-5 w-5 mr-2" />
-              Workers Attendance Matrix
-            </h2>
-            <DateRangeSelector
-              selectedDate={new Date(workersSelectedDate)}
-              viewType={workersViewType}
-              onDateChange={handleWorkersDateChange}
-              onViewTypeChange={handleWorkersViewTypeChange}
-            />
-          </div>
-
-          <AttendanceMatrix
-            data={workersAttendanceMatrixData}
-            viewType={workersViewType}
-            selectedDate={new Date(workersSelectedDate)}
-            showUserNames={true} // Show user names for workers
-            canExport={true}
-            userRole="admin"
-            onExport={() => {
-              // Custom export for workers data
-              const exportWorkersData = async () => {
-                try {
-                  const { exportAttendanceMatrixToExcel } = await import("~/utils/attendance-matrix-excel");
-                  await exportAttendanceMatrixToExcel({
-                    data: workersAttendanceMatrixData,
-                    selectedDate: new Date(workersSelectedDate),
-                    viewType: workersViewType as any,
-                    userRole: 'admin',
-                    showUserNames: true,
-                    worksheetName: "Workers Attendance Matrix"
-                  });
-                } catch (error) {
-                  console.error("Error exporting workers attendance:", error);
-                  alert("Error generating Excel file. Please try again.");
-                }
-              };
-              exportWorkersData();
-            }}
-          />
         </div>
 
         {/* Recent Workers Attendance */}
@@ -1153,7 +568,7 @@ export default function Dashboard() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="p-5">
               <div className="flex items-center">
@@ -1223,38 +638,9 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Personal Attendance Matrix Section */}
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <DateRangeSelector
-              selectedDate={new Date(selectedDate)}
-              viewType={viewType}
-              onDateChange={handleDateChange}
-              onViewTypeChange={handleViewTypeChange}
-            />
-
-            {canDownloadExcel && (
-              <button
-                onClick={exportToExcel}
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export to Excel
-              </button>
-            )}
-          </div>
-
-          <AttendanceMatrix
-            data={attendanceMatrixData || []}
-            viewType={viewType}
-            selectedDate={new Date(selectedDate)}
-            showUserNames={false} // Hide user names since it's personal view
-            canExport={true}
-            userRole="worker"
-            onExport={exportToExcel}
-          />
+          {/* Checkout Time Widget */}
+          <CheckoutTimeWidget todayAttendance={todayAttendance} />
         </div>
 
         <div className="bg-white shadow overflow-hidden sm:rounded-md">

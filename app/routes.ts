@@ -10,6 +10,7 @@ export default [
     index("routes/home.tsx"),
     route("dashboard", "routes/dashboard.tsx"),
     route("attendance", "routes/attendance.tsx"),
+    route("attendance-matrix", "routes/attendance-matrix.tsx"),
     route("profile", "routes/profile.tsx"),
     route("photo/:attendanceId/:type", "routes/photo.$attendanceId.$type.tsx"),
     

@@ -3,6 +3,7 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { redirect } from "react-router";
 import { requireAdmin } from "~/utils/session.server";
 import { prisma } from "~/utils/db.server";
+import { getWorkerAttendanceStats } from "~/utils/attendance-stats.server";
 import { getUserPrimaryRole } from "~/utils/auth";
 import { updateUser, getAllRoles } from "~/utils/auth.server";
 import { Plus, Edit, Trash2, Shield, User, Users, CalendarDays } from "lucide-react";
@@ -53,26 +54,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   });
 
-  // Get today's attendance statistics
-  const todayAttendance = await prisma.attendance.count({
-    where: {
-      date: today,
-    },
-  });
-  
-  const checkedInToday = await prisma.attendance.count({
-    where: {
-      date: today,
-      checkOut: null,
-    },
-  });
-  
-  const completedToday = await prisma.attendance.count({
-    where: {
-      date: today,
-      checkOut: { not: null },
-    },
-  });
+  // Get unified attendance statistics for workers
+  const workerStats = await getWorkerAttendanceStats();
 
   return {
     users,
@@ -80,11 +63,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     stats: {
       totalAdmins,
       totalWorkers,
-      todayAttendance,
-      checkedInToday,
-      completedToday,
+      todayAttendance: workerStats.workersPresent,
+      checkedInToday: workerStats.currentlyIn,
+      completedToday: workerStats.completedToday,
     },
-    todayDate: today,
+    todayDate: workerStats.todayDate,
   };
 }
 
@@ -305,6 +288,15 @@ export default function AdminUsers() {
           </div>
         </div>
       </div>
+
+      {/* Today's Attendance Widget */}
+      <TodayAttendanceWidget
+        todayAttendance={stats.todayAttendance}
+        totalWorkers={stats.totalWorkers}
+        checkedInToday={stats.checkedInToday}
+        completedToday={stats.completedToday}
+        date={todayDate}
+      />
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul className="divide-y divide-gray-200">

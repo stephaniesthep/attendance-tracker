@@ -2,6 +2,7 @@ import { useLoaderData, Form, Link } from "react-router";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { redirect } from "react-router";
 import { prisma } from "~/utils/db.server";
+import { getWorkerAttendanceStats } from "~/utils/attendance-stats.server";
 import { createUser, updateUser, deleteUser, getAllRoles } from "~/utils/auth.server";
 import { getUserPrimaryRole } from "~/utils/auth";
 import { superAdminOnly } from "~/utils/middleware.server";
@@ -59,26 +60,8 @@ export const loader = superAdminOnly(async ({ user }) => {
     }
   });
 
-  // Get today's attendance statistics
-  const todayAttendance = await prisma.attendance.count({
-    where: {
-      date: today,
-    },
-  });
-  
-  const checkedInToday = await prisma.attendance.count({
-    where: {
-      date: today,
-      checkOut: null,
-    },
-  });
-  
-  const completedToday = await prisma.attendance.count({
-    where: {
-      date: today,
-      checkOut: { not: null },
-    },
-  });
+  // Get unified attendance statistics for workers
+  const workerStats = await getWorkerAttendanceStats();
 
   return {
     users,
@@ -88,11 +71,11 @@ export const loader = superAdminOnly(async ({ user }) => {
       totalUsers,
       totalAdmins,
       totalWorkers,
-      todayAttendance,
-      checkedInToday,
-      completedToday,
+      todayAttendance: workerStats.workersPresent,
+      checkedInToday: workerStats.currentlyIn,
+      completedToday: workerStats.completedToday,
     },
-    todayDate: today,
+    todayDate: workerStats.todayDate,
   };
 });
 
@@ -418,6 +401,15 @@ export default function SuperAdminUsers() {
           </div>
         </div>
       </div>
+
+      {/* Today's Attendance Widget */}
+      <TodayAttendanceWidget
+        todayAttendance={stats.todayAttendance}
+        totalWorkers={stats.totalWorkers}
+        checkedInToday={stats.checkedInToday}
+        completedToday={stats.completedToday}
+        date={todayDate}
+      />
 
       {/* Create User Form */}
       {showCreateForm && (
